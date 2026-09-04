@@ -101,7 +101,7 @@ class MediaStorage(private val context: Context) {
         }.onFailure {
             return PublishResult.Failure("Could not store file: ${it.message}")
         }
-        PublishResult.Failure("Could not store file")
+        return PublishResult.Failure("Could not store file")
     }
 
     private fun publishViaMediaStore(file: File, kind: MediaKind, title: String): Uri? =

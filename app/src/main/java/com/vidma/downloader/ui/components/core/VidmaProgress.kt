@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.toPx
 import com.vidma.downloader.ui.theme.LocalVidmaPalette
 import com.vidma.downloader.ui.theme.VidmaPalette
 import kotlin.math.cos

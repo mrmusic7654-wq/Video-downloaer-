@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -69,10 +70,11 @@ fun MediaArt(
         }
     }
 
+    val context = LocalContext.current
     Box(modifier = modifier.clip(shape).background(Color(0xFF0D1024))) {
         if (model != null) {
             AsyncImage(
-                model = ImageRequest.Builder(coil.compose.LocalPlatformContext.current)
+                model = ImageRequest.Builder(context)
                     .data(model)
                     .crossfade(true)
                     .build(),

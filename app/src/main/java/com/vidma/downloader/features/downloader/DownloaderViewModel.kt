@@ -38,8 +38,8 @@ sealed interface FetchPhase {
  */
 class DownloaderViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val container = (application as VidmaApp).container
-    private val repo: DownloadRepository = container.repository
+    private val appContainer = (application as VidmaApp).container
+    private val repo: DownloadRepository = appContainer.repository
 
     // ---------------- observed by the whole app ----------------
 
@@ -52,10 +52,10 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
     val engineReady: StateFlow<Boolean> = repo.engineReady
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
-    val accent: StateFlow<AccentPreset> = container.prefs.accentFlow
+    val accent: StateFlow<AccentPreset> = appContainer.prefs.accentFlow
         .stateIn(viewModelScope, SharingStarted.Eagerly, AccentPreset.Aurora)
 
-    val publicStorage: StateFlow<Boolean> = container.prefs.publicStorageFlow
+    val publicStorage: StateFlow<Boolean> = appContainer.prefs.publicStorageFlow
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
     // ---------------- home form state ----------------
@@ -242,11 +242,11 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
     // ---------------- settings ----------------
 
     fun setAccent(preset: AccentPreset) {
-        viewModelScope.launch(Dispatchers.IO) { container.prefs.setAccent(preset) }
+        viewModelScope.launch(Dispatchers.IO) { appContainer.prefs.setAccent(preset) }
     }
 
     fun setPublicStorage(enabled: Boolean) {
-        viewModelScope.launch(Dispatchers.IO) { container.prefs.setPublicStorage(enabled) }
+        viewModelScope.launch(Dispatchers.IO) { appContainer.prefs.setPublicStorage(enabled) }
     }
 
     fun retryEngine() {

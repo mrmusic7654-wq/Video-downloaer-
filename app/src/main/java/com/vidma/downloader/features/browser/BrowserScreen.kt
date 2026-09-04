@@ -22,7 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.Globe
+import androidx.compose.material.icons.filled.Globe
 import androidx.compose.material.icons.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Refresh
@@ -122,9 +122,9 @@ fun BrowserScreen(
                 onValueChange = { browserVm.addressText = it },
                 modifier = Modifier.weight(1f),
                 placeholder = "Search or paste a web address",
-                leadingIcon = if (isWebPageUrl(currentUrl)) Icons.Rounded.Lock else Icons.Rounded.Globe,
+                leadingIcon = if (isWebPageUrl(currentUrl)) Icons.Rounded.Lock else Icons.Filled.Globe,
                 singleLine = true,
-                keyboardOptions = androidx.compose.ui.text.input.KeyboardOptions(
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
                     imeAction = androidx.compose.ui.text.input.ImeAction.Go,
                 ),
                 keyboardActions = androidx.compose.foundation.text.KeyboardActions(
@@ -239,7 +239,7 @@ private fun StartPage(onOpen: (String) -> Unit, palette: VidmaPalette = LocalVid
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                imageVector = Icons.Rounded.Globe,
+                imageVector = Icons.Filled.Globe,
                 contentDescription = null,
                 tint = Color.White,
                 modifier = Modifier.requiredSize(42.dp),
