@@ -31,6 +31,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vidma.downloader.domain.model.DownloadState
 import com.vidma.downloader.domain.model.DownloadTask
+import com.vidma.downloader.domain.model.percentText
 import com.vidma.downloader.ui.components.core.GlassCard
 import com.vidma.downloader.ui.components.core.GlowDot
 import com.vidma.downloader.ui.components.core.GlowProgressArc

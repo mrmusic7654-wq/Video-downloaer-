@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.vidma.downloader.domain.model.percentText
 import com.vidma.downloader.ui.components.core.GlassCard
 import com.vidma.downloader.ui.theme.LocalVidmaPalette
 import com.vidma.downloader.ui.theme.VidmaBase
