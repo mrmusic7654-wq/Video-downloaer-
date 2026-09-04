@@ -94,9 +94,10 @@ triplicated native code. That is where the ~800 MB went.
 What the optimized build does instead:
 
 1. **One ABI by default** (arm64-v8a covers ~99 % of modern devices) → the
-   python/ffmpeg payload ships once, not three times. Expected release APK:
-   **~35 MB** (≈ 20× smaller than the previous universal APK; the python +
-   ffmpeg runtime is the irreducible floor for a fully-offline yt-dlp engine).
+   python/ffmpeg payload ships once, not three times. Measured on CI:
+   **54 MB release APK / 74 MB debug APK** (arm64-v8a), i.e. a **~128 MB**
+   workflow artifact — ~6× smaller than before. The compressed python +
+   ffmpeg runtime is the irreducible floor for a fully-offline yt-dlp engine.
 2. **No universal APK** unless explicitly requested.
 3. **R8 minification + resource shrinking** for release builds (also strips
    the thousands of unused extended-icon classes and every unused resource).
