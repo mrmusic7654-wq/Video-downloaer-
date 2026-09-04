@@ -57,7 +57,7 @@ class BrowserViewModel : ViewModel() {
             webViewClient = BrowserClient()
             webChromeClient = object : WebChromeClient() {
                 override fun onProgressChanged(webView: WebView?, newProgress: Int) {
-                    progress = newProgress
+                    this@BrowserViewModel.progress = newProgress
                     isLoading = newProgress < 100
                 }
                 override fun onReceivedTitle(webView: WebView?, title: String?) {

@@ -1,6 +1,7 @@
 package com.vidma.downloader.ui.components.core
 
-import androidx.compose.animation.animateFloatAsState
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
