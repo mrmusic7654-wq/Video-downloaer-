@@ -17,6 +17,8 @@ output-metadata.json
 # Keystores (never commit secrets)
 *.jks
 *.keystore
+keystore.properties
+release.jks
 
 # System files
 .DS_Store

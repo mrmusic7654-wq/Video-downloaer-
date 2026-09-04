@@ -115,7 +115,6 @@ fun DownloaderScreen(
 
     val clipboard = LocalClipboardManager.current
     val haptics = LocalHapticFeedback.current
-    val context = LocalContext.current
     val active = downloads.filter { it.isActive }
     val recentTasks = downloads.take(6)
     val libraryById = remember(library) { library.associateBy { it.id } }

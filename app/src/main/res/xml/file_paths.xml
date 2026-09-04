@@ -10,4 +10,8 @@
     <files-path
         name="vidma_cache"
         path="covers/" />
+    <!-- Legacy direct-to-Downloads folder used on Android 9 (API 28) and below -->
+    <external-path
+        name="legacy_downloads"
+        path="Download/Vidma/" />
 </paths>

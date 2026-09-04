@@ -92,8 +92,9 @@ fun GlowProgressArc(
     val strokePx = stroke.toPx()
     Box(modifier = modifier.requiredSize(size), contentAlignment = Alignment.Center) {
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val r = (size.toPx() - strokePx) / 2f
-            val c = Offset(size.toPx() / 2f, size.toPx() / 2f)
+            val w = this.size.width
+            val r = (w - strokePx) / 2f
+            val c = Offset(w / 2f, w / 2f)
             // track
             drawArc(
                 color = Color.White.copy(alpha = 0.07f),

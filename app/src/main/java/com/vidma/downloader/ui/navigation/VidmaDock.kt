@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.vidma.downloader.domain.model.percentText
 import com.vidma.downloader.ui.components.core.GlassCard
 import com.vidma.downloader.ui.theme.LocalVidmaPalette
@@ -158,7 +159,7 @@ private fun DockItem(
                         text = if (badge > 9) "9+" else badge.toString(),
                         style = MaterialTheme.typography.labelSmall.copy(
                             color = Color.White,
-                            fontSize = androidx.compose.ui.unit.TextUnit(8f, androidx.compose.ui.unit.TextUnitType.Sp),
+                            fontSize = 8.sp,
                         ),
                     )
                 }

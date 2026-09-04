@@ -36,8 +36,6 @@ class BrowserViewModel : ViewModel() {
         private set
     var canGoForward by mutableStateOf(false)
         private set
-    var startPage by mutableStateOf("")
-        private set
 
     private var webView: WebView? = null
     private var pendingUrl: String? = null
@@ -79,11 +77,6 @@ class BrowserViewModel : ViewModel() {
         return view
     }
 
-    fun loadStartPage(url: String) {
-        startPage = url
-        webView?.loadUrl(url) ?: run { currentUrl = url }
-    }
-
     fun onAddressSubmit(raw: String) {
         val url = normalizeUrl(raw)
         if (url == null) {
@@ -111,7 +104,6 @@ class BrowserViewModel : ViewModel() {
     fun goForward() = webView?.takeIf { it.canGoForward() }?.goForward()
     fun reload() = webView?.reload()
     fun stopLoading() = webView?.stopLoading()
-    fun homePage() = startPage.takeIf { it.isNotBlank() }?.let(::load)
 
     fun onPageStarted(url: String) {
         currentUrl = url

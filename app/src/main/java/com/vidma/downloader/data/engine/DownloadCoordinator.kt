@@ -57,9 +57,11 @@ class DownloadCoordinator(
         val toPublic: Boolean,
     )
 
-    private val params = mutableMapOf<String, StartParams>()
-    private val activeJobs = mutableMapOf<String, Job>()
-    private val cancelled = mutableSetOf<String>()
+    // Touched from main (start/cancel/retry/remove) and IO (task completion),
+    // so all three are concurrent.
+    private val params = java.util.concurrent.ConcurrentHashMap<String, StartParams>()
+    private val activeJobs = java.util.concurrent.ConcurrentHashMap<String, Job>()
+    private val cancelled = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     fun start(
         url: String,
@@ -129,6 +131,7 @@ class DownloadCoordinator(
     fun remove(id: String) {
         params.remove(id)
         cancelled.remove(id)
+        activeJobs.remove(id)
         tasksMap.value = tasksMap.value - id
     }
 

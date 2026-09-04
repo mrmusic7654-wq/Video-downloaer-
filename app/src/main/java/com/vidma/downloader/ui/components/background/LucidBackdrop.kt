@@ -18,7 +18,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.vidma.downloader.ui.theme.AccentPreset
 import com.vidma.downloader.ui.theme.VidmaPalette
@@ -46,7 +46,9 @@ fun LucidBackdrop(
     palette: VidmaPalette,
     content: @Composable BoxScope.() -> Unit,
 ) {
-    val density = LocalConfiguration.current.density
+    // px-per-dp scale (e.g. 2.75 on a 440 dpi screen) — used to convert the
+    // orb/star dp sizes into canvas pixels.
+    val density = LocalDensity.current.density
     Box(modifier = modifier.fillMaxSize()) {
         val transition = rememberInfiniteTransition(label = "lucid")
         val breath by transition.animateFloat(
