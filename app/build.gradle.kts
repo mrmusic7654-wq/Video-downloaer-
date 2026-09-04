@@ -52,11 +52,11 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
 
-        // yt-dlp-android ships native python/ffmpeg per ABI. Only package
-        // the ABI(s) we actually ship — this is the single biggest size lever.
-        ndk {
-            abiFilters += vidmaAbis
-        }
+        // NOTE: no ndk.abiFilters here — AGP rejects using abiFilters together
+        // with splits.abi.include ("Conflicting configuration" EvalIssue).
+        // The splits block below is the single source of ABI truth: each
+        // generated APK automatically contains only its own ABI's native
+        // libs, so nothing else needs filtering.
 
         // App strings are English-only; drop translated strings pulled in
         // from material3 / media3 / androidx (few hundred KB of resources).
