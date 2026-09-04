@@ -22,7 +22,7 @@ class AppContainer(private val appContext: Context) {
     val prefs: VidmaPrefs = VidmaPrefs(appContext)
     val storage: MediaStorage = MediaStorage(appContext)
     val coordinator: DownloadCoordinator = DownloadCoordinator(appContext, storage, prefs)
-    val repository: DownloadRepository = DownloadRepositoryImpl(prefs, storage, coordinator)
+    val repository: DownloadRepository = DownloadRepositoryImpl(appContext, prefs, storage, coordinator)
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 

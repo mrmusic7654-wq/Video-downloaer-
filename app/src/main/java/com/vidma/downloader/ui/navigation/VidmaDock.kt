@@ -22,7 +22,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.filled.Globe
+import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -55,7 +55,7 @@ enum class VidmaTab(
 ) {
     Home("home", "Download", Icons.Rounded.Download),
     Library("library", "Library", Icons.Rounded.VideoLibrary),
-    Browser("browser", "Browser", Icons.Filled.Globe),
+    Browser("browser", "Browser", Icons.Rounded.Public),
 }
 
 /**

@@ -27,9 +27,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.toPx
 import com.vidma.downloader.ui.theme.LocalVidmaPalette
 import com.vidma.downloader.ui.theme.VidmaPalette
 import kotlin.math.cos
@@ -90,7 +90,7 @@ fun GlowProgressArc(
     label: (@Composable BoxScope.() -> Unit)? = null,
 ) {
     val p = progress.coerceIn(0f, 1f)
-    val strokePx = stroke.toPx()
+    val strokePx = with(LocalDensity.current) { stroke.toPx() }
     Box(modifier = modifier.requiredSize(size), contentAlignment = Alignment.Center) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = this.size.width
