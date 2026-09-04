@@ -29,8 +29,13 @@ class VidmaPrefs(private val context: Context) {
     }
     private val recordListSerializer = ListSerializer(HistoryRecord.serializer())
 
+    // Uncaught failures here must NEVER crash the app: a corrupt prefs file
+    // or an I/O hiccup during warm-up would otherwise be a launch-time kill.
+    private val errorHandler = kotlinx.coroutines.CoroutineExceptionHandler { _, error ->
+        android.util.Log.e("VidmaPrefs", "prefs store failed", error)
+    }
     private val scope = kotlinx.coroutines.CoroutineScope(
-        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO,
+        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO + errorHandler,
     )
 
     @Volatile

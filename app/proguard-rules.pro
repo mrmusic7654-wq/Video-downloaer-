@@ -23,6 +23,16 @@
     kotlinx.serialization.KSerializer serializer(...);
 }
 
+# --- AndroidX ViewModels (startup crash fix) ------------------------------
+# ViewModelProvider's default factory instantiates ViewModels REFLECTIVELY
+# (constructor of () / (Application) / (SavedStateHandle) / (Application,
+# SavedStateHandle)). R8 sees no direct constructor calls and strips them,
+# which kills the app at first composition with InstantiationException /
+# NoSuchMethodException — the "opens then force closes" bug.
+-keepclassmembers class * extends androidx.lifecycle.ViewModel {
+    public <init>(...);
+}
+
 # --- Kotlin / generic metadata -------------------------------------------
 -keepattributes *Annotation*, Signature, InnerClasses, EnclosingMethod
 

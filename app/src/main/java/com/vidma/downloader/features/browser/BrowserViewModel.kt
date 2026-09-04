@@ -53,7 +53,7 @@ class BrowserViewModel : ViewModel() {
             settings.loadWithOverviewMode = true
             settings.builtInZoomControls = true
             settings.displayZoomControls = false
-            settings.supportMultipleWindows()
+            settings.setSupportMultipleWindows(true)
             webViewClient = BrowserClient()
             webChromeClient = object : WebChromeClient() {
                 override fun onProgressChanged(webView: WebView?, newProgress: Int) {
