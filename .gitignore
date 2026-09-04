@@ -1,0 +1,23 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+**/build/
+output-metadata.json
+
+# Android Studio / IntelliJ
+.idea/
+*.hprof
+
+# Keystores (never commit secrets)
+*.jks
+*.keystore
+
+# System files
+.DS_Store
+Thumbs.db

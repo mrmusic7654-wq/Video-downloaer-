@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- vidma adaptive-icon foreground: gradient squircle + play glyph -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- gradient squircle (inside the 66dp safe zone: 21..87) -->
+    <path android:pathData="M33,21 h42 a12,12 0 0 1 12,12 v42 a12,12 0 0 1 -12,12 h-42 a12,12 0 0 1 -12,-12 v-42 a12,12 0 0 1 12,-12 z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="21"
+                android:startY="21"
+                android:endX="87"
+                android:endY="87">
+                <item android:offset="0.0" android:color="#FF2FD8FF" />
+                <item android:offset="0.52" android:color="#FF7C5CFF" />
+                <item android:offset="1.0" android:color="#FFFF5CB8" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- inner glass ring -->
+    <path
+        android:pathData="M33,21 h42 a12,12 0 0 1 12,12 v42 a12,12 0 0 1 -12,12 h-42 a12,12 0 0 1 -12,-12 v-42 a12,12 0 0 1 12,-12 z"
+        android:strokeColor="#33FFFFFF"
+        android:strokeWidth="2.4" />
+
+    <!-- play glyph -->
+    <path
+        android:pathData="M46.5,41 L67,54 L46.5,67 Z"
+        android:fillColor="#FFFFFFFF" />
+</vector>

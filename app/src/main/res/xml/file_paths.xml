@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- App-private media (videos downloaded with "private storage" policy) -->
+    <external-files-path
+        name="vidma_videos"
+        path="Vidma/" />
+    <external-files-path
+        name="vidma_covers"
+        path="covers/" />
+    <files-path
+        name="vidma_cache"
+        path="covers/" />
+</paths>
