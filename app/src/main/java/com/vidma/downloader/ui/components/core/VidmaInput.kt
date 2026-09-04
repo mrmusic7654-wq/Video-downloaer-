@@ -1,6 +1,6 @@
 package com.vidma.downloader.ui.components.core
 
-import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -37,7 +37,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -71,7 +71,7 @@ fun GlassTextField(
         targetValue = if (focused) palette.primary.copy(alpha = 0.75f) else VidmaBase.GlassStroke,
         label = "focus",
     )
-    val fillAlpha by animateColorAsState(
+    val fillAlpha by animateFloatAsState(
         targetValue = if (focused) 0.085f else 0.05f,
         label = "fill",
     )

@@ -80,6 +80,7 @@ data class VidmaPalette(
     val inkTop: Color = VidmaBase.InkTop,
     val inkMid: Color = VidmaBase.InkMid,
     val inkBottom: Color = VidmaBase.InkBottom,
+    val glassStrokeSoft: Color = VidmaBase.GlassStrokeSoft,
 ) {
     val primary: Color get() = accent.primary
     val secondary: Color get() = accent.secondary

@@ -186,20 +186,20 @@ fun TaskRow(
 
             // ---- trailing actions ----
             when {
-                task.isActive -> TrailingAction(icon = Icons.Rounded.Close, tint = palette.danger) { onCancel(task.id) }
+                task.isActive -> TrailingAction(onClick = { onCancel(task.id) }, icon = Icons.Rounded.Close, tint = palette.danger)
                 task.state == DownloadState.Failed -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    TrailingAction(icon = Icons.Rounded.Replay, tint = palette.secondary) { onRetry(task.id) }
-                    TrailingAction(icon = Icons.Rounded.Close, tint = VidmaBase.TextLow) { onDismiss(task.id) }
+                    TrailingAction(onClick = { onRetry(task.id) }, icon = Icons.Rounded.Replay, tint = palette.secondary)
+                    TrailingAction(onClick = { onDismiss(task.id) }, icon = Icons.Rounded.Close, tint = VidmaBase.TextLow)
                 }
                 task.state == DownloadState.Cancelled -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    TrailingAction(icon = Icons.Rounded.Replay, tint = VidmaBase.TextMid) { onRetry(task.id) }
-                    TrailingAction(icon = Icons.Rounded.Close, tint = VidmaBase.TextLow) { onDismiss(task.id) }
+                    TrailingAction(onClick = { onRetry(task.id) }, icon = Icons.Rounded.Replay, tint = VidmaBase.TextMid)
+                    TrailingAction(onClick = { onDismiss(task.id) }, icon = Icons.Rounded.Close, tint = VidmaBase.TextLow)
                 }
                 task.state == DownloadState.Completed -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (onPlay != null) {
-                        TrailingAction(icon = Icons.Rounded.PlayArrow, tint = palette.secondary) { onPlay(task) }
+                        TrailingAction(onClick = { onPlay(task) }, icon = Icons.Rounded.PlayArrow, tint = palette.secondary)
                     }
-                    TrailingAction(icon = Icons.Rounded.Close, tint = VidmaBase.TextLow) { onDismiss(task.id) }
+                    TrailingAction(onClick = { onDismiss(task.id) }, icon = Icons.Rounded.Close, tint = VidmaBase.TextLow)
                 }
             }
         }

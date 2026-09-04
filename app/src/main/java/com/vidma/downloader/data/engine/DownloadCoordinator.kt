@@ -260,7 +260,7 @@ class DownloadCoordinator(
         }
     }
 
-    private fun complete(
+    private suspend fun complete(
         id: String,
         p: StartParams,
         filePath: String,
