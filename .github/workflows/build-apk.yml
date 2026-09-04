@@ -1,13 +1,25 @@
 name: Build vidma APK
 
-# Compiles the app on every push/PR and uploads installable
-# debug + release APKs (per-ABI splits + universal) as workflow artifacts.
+# Compiles the app on every push/PR and uploads installable APKs as
+# workflow artifacts.
+#
+# Default output is lean: a single arm64-v8a release APK (and one debug
+# APK for testing). The old pipeline built debug+release for 3 ABIs plus
+# universal APKs — ~800 MB of artifacts per run. The bundled yt-dlp
+# python/ffmpeg runtime is triplicated per ABI, so a "fat" build (all
+# ABIs + universal) stays available via workflow_dispatch only.
 
 on:
   push:
     branches: ["**"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      allAbis:
+        description: "Also build all ABIs + universal APK (large, ~800 MB)"
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -26,10 +38,14 @@ jobs:
       - name: Validate Gradle wrapper
         uses: gradle/actions/wrapper-validation@v4
 
-  # 2 — compile debug & release APKs
+  # 2 — compile the lean APK set (arm64-v8a)
   build:
     needs: wrapper-validation
     runs-on: ubuntu-latest
+    env:
+      GRADLE_ARGS: ${{ (github.event_name == 'workflow_dispatch' && inputs.allAbis)
+        && '-Pvidma.abis=armeabi-v7a,arm64-v8a,x86_64 -Pvidma.universalApk=true'
+        || '-Pvidma.abis=arm64-v8a' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -62,14 +78,15 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build debug + release APKs
-        run: ./gradlew :app:assembleDebug :app:assembleRelease --stacktrace
+      - name: Build APKs
+        run: ./gradlew :app:assembleDebug :app:assembleRelease $GRADLE_ARGS --stacktrace
 
-      - name: List APK outputs
+      - name: APK size report
         run: |
-          echo "debug:";   ls -la app/build/outputs/apk/debug || true
-          echo "release:"; ls -la app/build/outputs/apk/release || true
-          sha256sum app/build/outputs/apk/*/*.apk || true
+          echo "| APK | size |" && echo "|---|---|"
+          find app/build/outputs/apk -name "*.apk" -printf "%p\t%s\n" \
+            | awk -F'\t' 'function human(n) { split("B KB MB GB", U, " "); i=1; while (n >= 1024 && i < 4) { n/=1024; i++ } return sprintf("%.1f %s", n, U[i]) } { printf "| %s | %s |\n", $1, human($2) }'
+          du -shc app/build/outputs/apk/*/*.apk | tail -1
 
       - name: Upload APKs
         uses: actions/upload-artifact@v4

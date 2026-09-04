@@ -14,6 +14,30 @@ plugins {
 //  (engine/repository/store) · util
 // ------------------------------------------------------------------
 
+// ------------------------------------------------------------------
+//  APK SIZE STRATEGY
+//
+//  yt-dlp-android bundles a full python runtime (~40-50 MB) and ffmpeg
+//  (~18-25 MB) per ABI. Building all 3 ABIs + a universal APK therefore
+//  produced ~200 MB universal APKs (and a ~800 MB CI artifact).
+//
+//  Defaults target ONE apk for the ABI of real devices (arm64-v8a):
+//    ./gradlew :app:assembleRelease                  → arm64-v8a only
+//
+//  Legacy/fat builds stay one flag away when truly needed:
+//    ./gradlew :app:assembleRelease \
+//      -Pvidma.abis=armeabi-v7a,arm64-v8a,x86_64 -Pvidma.universalApk=true
+// ------------------------------------------------------------------
+val vidmaAbis: List<String> = (project.findProperty("vidma.abis") as String?)
+    ?.split(",")
+    ?.map { it.trim() }
+    ?.filter { it.isNotEmpty() }
+    ?.takeIf { it.isNotEmpty() }
+    ?: listOf("arm64-v8a")
+
+val vidmaUniversalApk: Boolean =
+    (project.findProperty("vidma.universalApk") as String?)?.toBoolean() == true
+
 android {
     namespace = "com.vidma.downloader"
     compileSdk = 35
@@ -28,10 +52,15 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
 
-        // yt-dlp-android ships native python/ffmpeg per ABI.
+        // yt-dlp-android ships native python/ffmpeg per ABI. Only package
+        // the ABI(s) we actually ship — this is the single biggest size lever.
         ndk {
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64")
+            abiFilters += vidmaAbis
         }
+
+        // App strings are English-only; drop translated strings pulled in
+        // from material3 / media3 / androidx (few hundred KB of resources).
+        resourceConfigurations += setOf("en")
     }
 
     buildTypes {
@@ -40,7 +69,10 @@ android {
             versionNameSuffix = "-debug"
         }
         release {
-            isMinifyEnabled = false
+            // R8 full: shrinks unused code (e.g. the thousands of unused
+            // extended icon classes) and unused resources.
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -49,12 +81,14 @@ android {
     }
 
     // Per-ABI APKs keep the bundled yt-dlp runtime lean (Play-style delivery).
+    // With the default single ABI this simply produces one APK and no longer
+    // emits a giant all-in-one universal APK unless explicitly requested.
     splits {
         abi {
             isEnable = true
             reset()
-            include("armeabi-v7a", "arm64-v8a", "x86_64")
-            isUniversalApk = true
+            include(*vidmaAbis.toTypedArray())
+            isUniversalApk = vidmaUniversalApk
         }
     }
 
@@ -72,7 +106,14 @@ android {
 
     packaging {
         resources {
-            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += setOf(
+                "META-INF/AL2.0",
+                "META-INF/LGPL2.1",
+                "META-INF/DEPENDENCIES",
+                "META-INF/INDEX.LIST",
+                "META-INF/*.version",
+                "META-INF/versions/9/OSGI-INF/MANIFEST.MF",
+            )
         }
     }
 
