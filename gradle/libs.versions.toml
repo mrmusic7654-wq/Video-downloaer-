@@ -19,6 +19,11 @@ coil = "2.7.0"
 
 # yt-dlp-for-Android (maintained fork, published to Maven Central)
 youtubedlAndroid = "0.18.1"
+# Jackson is a *runtime* dependency of youtubedl-android, so it is packaged
+# but not visible for compilation. The engine uses YoutubeDL.objectMapper
+# directly, hence the explicit (compile) dependency — pinned to the exact
+# version from the library's POM so nothing conflicts or grows the APK.
+jackson = "2.11.1"
 
 # Async / persistence / network / serialization
 coroutines = "1.9.0"
@@ -66,6 +71,9 @@ coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coi
 # yt-dlp engine
 youtubedl-android-library = { group = "io.github.junkfood02.youtubedl-android", name = "library", version.ref = "youtubedlAndroid" }
 youtubedl-android-ffmpeg = { group = "io.github.junkfood02.youtubedl-android", name = "ffmpeg", version.ref = "youtubedlAndroid" }
+
+# Direct use of the engine's ObjectMapper (see YtDlpEngine.fetchInfo).
+jackson-databind = { group = "com.fasterxml.jackson.core", name = "jackson-databind", version.ref = "jackson" }
 
 # Async / storage / serialization
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }

@@ -10,8 +10,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.await
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -128,16 +127,24 @@ object YtDlpEngine {
             addOption("--extractor-retries", 2)
             addOption("--socket-timeout", 20)
         }
-        val job = engineScope.launch(Dispatchers.IO) {
+        // [YoutubeDL.execute] blocks its thread, so it runs in [engineScope]
+        // (never on the caller's dispatcher) with a hard timeout: a hung
+        // extractor is destroyed instead of freezing the UI on "parsing…".
+        // The outcome is captured as a Result inside the child — after a
+        // timeout the orphaned call can finish or fail without ever throwing
+        // unobserved (an un-awaited failed child would crash the process).
+        val deferred = engineScope.async(Dispatchers.IO) {
             try {
-                YoutubeDL.getInstance().execute(request, processId, null)
+                Result.success(YoutubeDL.getInstance().execute(request, processId, null))
+            } catch (e: Exception) {
+                Result.failure(e)
             } finally {
                 // Safety net: never leak a python process on any exit path.
                 runCatching { YoutubeDL.getInstance().destroyProcessById(processId) }
             }
         }
         val response = try {
-            withTimeout(INFO_TIMEOUT_MS) { job.await() }
+            withTimeout(INFO_TIMEOUT_MS) { deferred.await() }.getOrThrow()
         } catch (e: TimeoutCancellationException) {
             YoutubeDL.getInstance().destroyProcessById(processId)
             throw EngineStalledException(
@@ -269,20 +276,27 @@ object YtDlpEngine {
             addOption("--write-thumbnail")
         }
         kindSelector(request)
-        val job = engineScope.launch(Dispatchers.IO) {
+        // Same supervision as [fetchInfo]: the blocking library call runs in
+        // [engineScope] with a hard total-time cap, and its outcome is a
+        // Result so a post-timeout orphan can never throw unobserved.
+        val deferred = engineScope.async(Dispatchers.IO) {
             try {
-                YoutubeDL.getInstance().execute(
-                    request,
-                    processId,
-                ) { progress, eta, line ->
-                    onProgress(progress, eta, line)
-                }
+                Result.success(
+                    YoutubeDL.getInstance().execute(
+                        request,
+                        processId,
+                    ) { progress, eta, line ->
+                        onProgress(progress, eta, line)
+                    },
+                )
+            } catch (e: Exception) {
+                Result.failure(e)
             } finally {
                 runCatching { YoutubeDL.getInstance().destroyProcessById(processId) }
             }
         }
         return try {
-            withTimeout(timeoutMs) { job.await() }.exitCode
+            withTimeout(timeoutMs) { deferred.await() }.getOrThrow().exitCode
         } catch (e: TimeoutCancellationException) {
             YoutubeDL.getInstance().destroyProcessById(processId)
             throw EngineStalledException(
@@ -295,14 +309,14 @@ object YtDlpEngine {
         runCatching { YoutubeDL.getInstance().destroyProcessById(processId) }
             .getOrDefault(false)
 
-    private companion object {
-        /** Max time for a metadata resolve before we destroy the process. */
-        const val INFO_TIMEOUT_MS = 120_000L
+    // Supervision constants live directly on this object — an `object`
+    // declaration cannot have a companion.
+    /** Max time for a metadata resolve before we destroy the process. */
+    private const val INFO_TIMEOUT_MS = 120_000L
 
-        /** Hard total-time cap for a download; the stall watchdog is the main guard. */
-        const val DOWNLOAD_TIMEOUT_MS = 30L * 60_000L
+    /** Hard total-time cap for a download; the stall watchdog is the main guard. */
+    private const val DOWNLOAD_TIMEOUT_MS = 30L * 60_000L
 
-        val ERROR_JSON_PATTERN = Regex("\"type\"\\s*:\\s*\"error\"")
-        val ERROR_MESSAGE_PATTERN = Regex("\"error\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")
-    }
+    private val ERROR_JSON_PATTERN = Regex("\"type\"\\s*:\\s*\"error\"")
+    private val ERROR_MESSAGE_PATTERN = Regex("\"error\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")
 }
