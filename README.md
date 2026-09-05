@@ -19,19 +19,20 @@ native browser — all under one lucid, animated "aurora" glass design.
 
 | | |
 |---|---|
-| 🏠 **Download tab** | Paste any link (or share it into vidma from any app) → vidma extracts the media with yt-dlp and shows a format studio: **Video/Audio**, quality presets up to 8K, container (MP4/MKV/WebM), audio formats (MP3/M4A/Opus/FLAC/WAV), sizes & duration. |
+| 🏠 **Download tab** | Paste any link (or share it into vidma from any app) → vidma extracts the media with yt-dlp and shows a format studio: **Video/Audio**, quality presets up to 8K, container (MP4/MKV/WebM), source audio formats in the lean build and MP3/M4A/Opus/FLAC/WAV conversion in full FFmpeg builds. |
 | 📚 **Library tab** | Searchable grid of everything you saved, with thumbnails, file sizes and dates. Tap to **play in a glass ExoPlayer sheet**, share, open with another app, or delete. |
-| 🌐 **Browser tab** | A native WebView browser with back/forward/refresh, progress bar and a glowing **"download this page"** button that hands the current URL straight to yt-dlp. |
+| 🌐 **Browser tab** | A Chromium-powered Android system WebView with back/forward/refresh, progress bar, Google search fallback and a glowing **"download this page"** button. Long-press and drag the button to place it anywhere; its position is remembered. |
 | ⚙️ Settings | 4 switchable **accent themes** that re-skin the whole app & backdrop live, storage policy (public Downloads vs private shelf), engine status, library hygiene. |
 | 🎨 Design | Fully procedural **lucid fluid backdrop** — breathing aurora orbs, starfield twinkle, light ribbons, vignette — drawn in Compose at 60fps (no bitmap). Glass cards, gradient CTAs with shimmer, glow progress rings, haptic feedback, custom Sora/Inter typography. |
-| 🧠 Engine | Real **yt-dlp + Python + FFmpeg** bundled per-ABI; concurrent downloads (2 slots, queue), live %/ETA/console line, cancel & retry, `.part` resume, thumbnail auto-save, cover art caching. |
+| 🧠 Engine | Real **yt-dlp + Python** with a lean single-file mode, concurrent downloads (2 slots, queue with cancel/retry), live %/ETA/console line, `.part` resume, thumbnail auto-save and an OkHttp fallback for direct CDN media URLs. Optional FFmpeg builds add merging/audio conversion. |
 | 🔒 Storage | Scoped-storage safe on every Android version: files land in `Download/Vidma` via **MediaStore** (no all-files permission), with an in-app private shelf option. |
 
 ## 📱 Screens
 
-1. **Home / Downloader** — hero title, glass URL field with **Paste**, Resolve → format studio → big gradient **Download** button, live queue with progress rings.
-2. **Library** — search, video/audio filters, 2-column grid, in-app player sheet.
-3. **Browser** — native in-app browser + instant download action.
+1. **Home / Capture** — one glass URL field with **Paste**, Resolve → format studio → big gradient **Download** button; the Chromium browser feeds the same queue.
+2. **Downloads** — a dedicated live progress centre with aggregate progress, active/queued/finished counters, ETA, retry and cancel actions.
+3. **Library** — search, video/audio filters, 2-column grid, in-app player sheet.
+4. **Browser** — Chromium-powered Android system WebView + instant download action that can be long-press dragged.
 Plus a floating Settings screen and an always-visible **active download tray** above the dock.
 
 ## 🏗 Architecture
@@ -48,18 +49,19 @@ app/src/main/java/com/vidma/downloader
 │   ├── components
 │   │   ├── background       LucidBackdrop — animated procedural fluid layer
 │   │   ├── core             GlassCard, VidmaButton/Glass/Icon, fields, chips, progress, bits
-│   │   └── media            MediaArt, TaskRow, TaskQueueSheet, PlayerSheet (Media3)
+│   │   └── media            MediaArt, TaskRow, PlayerSheet (Media3)
 │   └── navigation           VidmaDock (bottom glass dock), MainScaffold, toast, tab routing
 ├── features                 Screen features (each with its ViewModel)
 │   ├── downloader           Home: URL resolver + format studio + queue
+│   ├── downloads             Live progress centre, ETA, retry/cancel actions
 │   ├── library              Grid, filters, playback & item actions
-│   ├── browser              WebView VM + chrome + download-this-page
+│   ├── browser              Chromium WebView VM + chrome + download-this-page
 │   └── settings             Accent, storage policy, engine, about
 ├── domain                   Pure Kotlin
 │   ├── model                MediaKind/DownloadState/Task/Item/MediaSummary, format rules
 │   └── repository           DownloadRepository interface
 ├── data
-│   ├── engine               YtDlpEngine (library wrapper) + DownloadCoordinator (queue)
+│   ├── engine               YtDlpEngine + OkHttp direct fallback + DownloadCoordinator
 │   ├── storage              MediaStorage (staging → MediaStore publishing, covers)
 │   ├── store                VidmaPrefs (DataStore: settings + JSON library history)
 │   ├── model                Persisted HistoryRecord (@Serializable)
@@ -76,39 +78,46 @@ callback → staged file → publish via MediaStore → library history in DataS
 | Piece | Choice |
 |---|---|
 | Language / UI | Kotlin 2.1.21 · Jetpack Compose BOM 2025.01.01 · Material3 |
-| Engine | `io.github.junkfood02.youtubedl-android:library` + `:ffmpeg` **0.18.1** (bundles yt-dlp, python & ffmpeg — maintained fork on Maven Central) |
+| Engine | `io.github.junkfood02.youtubedl-android:library` **0.18.1** (yt-dlp + Python) · optional `:ffmpeg` via `-Pvidma.withFfmpeg=true` · OkHttp 4.12 direct-media fallback |
 | Playback | Media3 / ExoPlayer 1.4.1 |
 | Images | Coil 2.7.0 |
 | Nav / lifecycle | Navigation-Compose 2.8.5 · lifecycle 2.8.7 |
+| Network | OkHttp 4.12 for the direct-media fallback and resilient HTTP streaming |
 | Persistence | DataStore + kotlinx.serialization (no Room needed) |
-| Build | AGP 8.7.3 · Gradle 8.10.2 · JDK 17 · release builds are minified (R8) with shrunk resources, single-ABI by default (arm64-v8a) |
+| Build | AGP 8.7.3 · Gradle 8.10.2 · JDK 17 · release builds are minified (R8) with shrunk resources, compressed native libs and single-ABI by default (arm64-v8a) |
 
 ## 📦 App size — why the old build was ~800 MB
 
-The engine is the weight: `youtubedl-android` embeds a full **python runtime
-(~40–50 MB, uncompressed)** and **ffmpeg (~18–25 MB)** *per CPU ABI*. The old
-config packaged 3 ABIs into every APK **and** built a universal APK for both
-debug and release — 8 APKs per CI run, each carrying up to ~200 MB of
-triplicated native code. That is where the ~800 MB went.
+The engine is the weight: `youtubedl-android` embeds a Python runtime, and
+shipping several CPU ABIs or FFmpeg more than once makes the artifact grow
+quickly. The previous build packaged 3 ABIs into universal APKs. The optimized
+build now does the following:
 
-What the optimized build does instead:
+1. **arm64-v8a only by default** — the native runtime is shipped once instead
+   of being triplicated. Other ABIs remain an explicit opt-in.
+2. **No FFmpeg in the default APK** — single-file muxed formats and source
+   audio work without a second native runtime. FFmpeg is detected at runtime
+   when a full build includes it.
+3. **Compressed native libraries**, R8 minification, resource shrinking,
+   English-only resources and the small Material icon core instead of the
+   extended icon bundle.
+4. **Android's system Chromium WebView** is used; no browser binary is copied
+   into the APK.
 
-1. **One ABI by default** (arm64-v8a covers ~99 % of modern devices) → the
-   python/ffmpeg payload ships once, not three times. Measured on CI:
-   **54 MB release APK / 74 MB debug APK** (arm64-v8a), i.e. a **~128 MB**
-   workflow artifact — ~6× smaller than before. The compressed python +
-   ffmpeg runtime is the irreducible floor for a fully-offline yt-dlp engine.
-2. **No universal APK** unless explicitly requested.
-3. **R8 minification + resource shrinking** for release builds (also strips
-   the thousands of unused extended-icon classes and every unused resource).
-4. **English-only resources** — drops translated strings from bundled libraries.
-5. **CI uploads one release APK + one debug APK**, not eight fat ones.
+This is the practical route toward a **20–30 MB download target** while
+retaining an offline yt-dlp resolver. Exact size depends on the published
+runtime and signing/build tools, so the CI size report remains authoritative.
+A full FFmpeg build is intentionally larger but enables stream merging and
+MP3/M4A/etc. conversion.
 
 ```bash
-# Default lean build (what you want):
-./gradlew :app:assembleRelease                # app/build/outputs/apk/release → arm64-v8a APK
+# Default lean release (arm64-v8a, direct formats):
+./gradlew :app:assembleRelease
 
-# Opt-in legacy/fat build when you really need every ABI:
+# Full feature release with stream merging/audio conversion:
+./gradlew :app:assembleRelease -Pvidma.withFfmpeg=true
+
+# Opt-in legacy/fat build when truly needed:
 ./gradlew :app:assembleRelease \
   -Pvidma.abis=armeabi-v7a,arm64-v8a,x86_64 -Pvidma.universalApk=true
 ```
@@ -125,8 +134,11 @@ What the optimized build does instead:
 ./gradlew :app:assembleDebug -Pvidma.abis=x86_64
 ```
 
-> **First run:** vidma unpacks the bundled yt-dlp/Python/FFmpeg runtime once —
-> the Downloader shows *"Preparing the download engine"* for a few seconds.
+> **First run:** vidma warms the bundled yt-dlp/Python runtime once in the
+> Application startup coroutine. The Downloader can accept a paste while that
+> work is in progress; the loading card reports the state instead of requiring
+> a second tap. Full FFmpeg builds warm their optional converter at the same
+> time.
 > **Release signing:** optional — create `keystore.properties`
 > (`storeFile/storePassword/keyAlias/keyPassword`) in the project root; the
 > build picks it up automatically.
@@ -142,7 +154,7 @@ auto-generated by Android Studio.
 2. **build** — JDK 17 + Android SDK (licenses auto-accepted) → generates a
    throwaway signing keystore → builds **arm64-v8a debug + release APKs** →
    prints a size report → uploads them as the **`vidma-apks`** artifact
-   (~100 MB worth, down from ~800 MB).
+   (lean arm64 APKs, with no optional FFmpeg payload).
 
 Triggering the workflow manually offers an *"all ABIs + universal"* option if
 a fat build is ever needed for legacy devices.
@@ -154,9 +166,10 @@ a fat build is ever needed for legacy devices.
 
 ## 🧭 Notes & roadmap
 
-- Downloads run while vidma is open/foregrounded (2 concurrent, queue with
-  cancel/retry, `.part` resume). A **foreground-service downloader** is the
-  natural next step for background-forever behaviour.
+- Downloads run in the app process (2 concurrent, queue with cancel/retry,
+  `.part` resume) and are visible in the dedicated Downloads progress centre.
+  A **foreground-service downloader** is the natural next step for
+  background-forever behaviour.
 - Site coverage = yt-dlp coverage (YouTube, TikTok, Instagram, Vimeo, Twitter/X,
   Facebook, Twitch, SoundCloud, Bandcamp, 1000+ more). DRM-protected streams
   cannot be downloaded by any tool, including vidma.

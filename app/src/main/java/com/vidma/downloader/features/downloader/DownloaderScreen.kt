@@ -1,5 +1,7 @@
 package com.vidma.downloader.features.downloader
 
+import com.vidma.downloader.ui.components.core.VidmaIcons
+import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -23,11 +25,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.ContentPaste
-import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material.icons.rounded.Link
-import androidx.compose.material.icons.rounded.OpenInBrowser
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
@@ -99,6 +96,7 @@ fun DownloaderScreen(
     vm: DownloaderViewModel,
     onOpenLibrary: () -> Unit,
     onOpenBrowser: () -> Unit,
+    onOpenDownloads: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     val palette = LocalVidmaPalette.current
@@ -111,6 +109,7 @@ fun DownloaderScreen(
     val downloads by vm.downloads.collectAsStateV()
     val library by vm.library.collectAsStateV()
     val engineReady by vm.engineReady.collectAsStateV()
+    val ffmpegReady by vm.ffmpegReady.collectAsStateV()
     val sharedUrl by vm.lastSharedUrl.collectAsStateV()
 
     val clipboard = LocalClipboardManager.current
@@ -136,6 +135,7 @@ fun DownloaderScreen(
         item {
             BrandHeader(
                 activeCount = active.size,
+                onDownloads = onOpenDownloads,
                 onSettings = onOpenSettings,
                 palette = palette,
             )
@@ -183,15 +183,19 @@ fun DownloaderScreen(
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Text(
-                        text = "PASTE VIDEO URL",
+                        text = "ONE-TAP CAPTURE",
                         style = MaterialTheme.typography.labelMedium.copy(color = VidmaBase.TextLow),
+                    )
+                    Text(
+                        text = "Paste a link or browse with Chromium — both use the same queue.",
+                        style = MaterialTheme.typography.bodySmall.copy(color = VidmaBase.TextMid),
                     )
                     GlassTextField(
                         value = urlText,
                         onValueChange = vm::onUrlChange,
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = "https://youtube.com/watch?v=…",
-                        leadingIcon = Icons.Rounded.Link,
+                        leadingIcon = Icons.Rounded.ArrowForward,
                         trailing = {
                             if (urlText.isNotEmpty()) {
                                 VidmaIconButton(
@@ -204,7 +208,7 @@ fun DownloaderScreen(
                             } else {
                                 VidmaGlassButton(
                                     text = "Paste",
-                                    icon = Icons.Rounded.ContentPaste,
+                                    icon = Icons.Rounded.ArrowForward,
                                     onClick = {
                                         val clip = clipboard.getText()?.text
                                         if (clip != null) {
@@ -261,8 +265,8 @@ fun DownloaderScreen(
                             palette = palette,
                         )
                         VidmaGlassButton(
-                            text = "Browser",
-                            icon = Icons.Rounded.OpenInBrowser,
+                            text = "Chromium",
+                            icon = Icons.Rounded.ArrowForward,
                             onClick = onOpenBrowser,
                             height = 54.dp,
                             corner = 20.dp,
@@ -290,6 +294,7 @@ fun DownloaderScreen(
                     audioFormat = audioFormat,
                     container = container,
                     engineReady = engineReady,
+                    ffmpegReady = ffmpegReady,
                     onKind = { vm.onKindChange(it) },
                     onQuality = { vm.onQualityChange(it) },
                     onAudio = { vm.onAudioChange(it) },
@@ -384,7 +389,12 @@ fun DownloaderScreen(
 private fun <T> StateFlow<T>.collectAsStateV(): State<T> = collectAsStateWithLifecycle()
 
 @Composable
-private fun BrandHeader(activeCount: Int, onSettings: () -> Unit, palette: VidmaPalette) {
+private fun BrandHeader(
+    activeCount: Int,
+    onDownloads: () -> Unit,
+    onSettings: () -> Unit,
+    palette: VidmaPalette,
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -420,7 +430,13 @@ private fun BrandHeader(activeCount: Int, onSettings: () -> Unit, palette: Vidma
         }
         Spacer(Modifier.weight(1f))
         if (activeCount > 0) {
-            StatusPill(text = "$activeCount running", dotColor = palette.success, pulsing = true)
+            Box(
+                modifier = Modifier
+                    .clickable(onClick = onDownloads)
+                    .padding(vertical = 4.dp),
+            ) {
+                StatusPill(text = "$activeCount running", dotColor = palette.success, pulsing = true)
+            }
             Spacer(Modifier.width(10.dp))
         }
         VidmaIconButton(
@@ -446,7 +462,7 @@ private fun ErrorBanner(message: String, palette: VidmaPalette) {
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    imageVector = Icons.Rounded.ErrorOutline,
+                    imageVector = Icons.Rounded.Warning,
                     contentDescription = null,
                     tint = palette.danger,
                     modifier = Modifier.requiredSize(16.dp),
@@ -503,7 +519,7 @@ private fun EngineStartingCard(palette: VidmaPalette, onRetry: () -> Unit) {
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "vidma bundles yt-dlp + ffmpeg. First launch unpacks the native runtime — usually under a minute.",
+                text = "First launch prepares the lightweight yt-dlp runtime. Full builds can add FFmpeg for merging and audio conversion.",
                 style = MaterialTheme.typography.bodySmall.copy(color = VidmaBase.TextMid),
                 textAlign = TextAlign.Center,
             )
@@ -529,6 +545,7 @@ private fun MediaStudio(
     audioFormat: AudioFormatPref,
     container: ContainerPref,
     engineReady: Boolean,
+    ffmpegReady: Boolean,
     onKind: (MediaKind) -> Unit,
     onQuality: (com.vidma.downloader.domain.model.QualityPreset) -> Unit,
     onAudio: (AudioFormatPref) -> Unit,
@@ -592,9 +609,9 @@ private fun MediaStudio(
                     onSelect = { i -> onKind(if (i == 0) MediaKind.Video else MediaKind.Audio) },
                 )
                 if (kind == MediaKind.Video) {
-                    QualityStudio(quality, container, summary, onQuality, onContainer, palette)
+                    QualityStudio(quality, container, summary, ffmpegReady, onQuality, onContainer, palette)
                 } else {
-                    AudioStudio(audioFormat, onAudio, palette)
+                    AudioStudio(audioFormat, ffmpegReady, onAudio, palette)
                 }
                 VidmaButton(
                     text = when {
@@ -604,9 +621,9 @@ private fun MediaStudio(
                             if (quality.height != null) append(" ${quality.height}p")
                             append("  ·  ${container.label}")
                         }
-                        else -> "Extract ${audioFormat.label} audio"
+                        else -> if (ffmpegReady) "Extract ${audioFormat.label} audio" else "Download source audio"
                     },
-                    icon = Icons.Rounded.Download,
+                    icon = VidmaIcons.Download,
                     enabled = engineReady,
                     onClick = onDownload,
                     modifier = Modifier.fillMaxWidth(),
@@ -622,6 +639,7 @@ private fun QualityStudio(
     quality: com.vidma.downloader.domain.model.QualityPreset,
     container: ContainerPref,
     summary: MediaSummary,
+    ffmpegReady: Boolean,
     onQuality: (com.vidma.downloader.domain.model.QualityPreset) -> Unit,
     onContainer: (ContainerPref) -> Unit,
     palette: VidmaPalette,
@@ -649,9 +667,17 @@ private fun QualityStudio(
             }
         }
         Spacer(Modifier.height(4.dp))
-        Text(text = "CONTAINER", style = MaterialTheme.typography.labelSmall.copy(color = VidmaBase.TextLow))
+        Text(
+            text = if (ffmpegReady) "CONTAINER" else "DIRECT OUTPUT",
+            style = MaterialTheme.typography.labelSmall.copy(color = VidmaBase.TextLow),
+        )
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(ContainerPref.entries.toList()) { c ->
+            val containerChoices = if (ffmpegReady) {
+                ContainerPref.entries.toList()
+            } else {
+                listOf(ContainerPref.Mp4)
+            }
+            items(containerChoices) { c ->
                 VidmaChoiceChip(
                     text = c.label,
                     selected = container == c,
@@ -666,6 +692,7 @@ private fun QualityStudio(
 @Composable
 private fun AudioStudio(
     audioFormat: AudioFormatPref,
+    ffmpegReady: Boolean,
     onAudio: (AudioFormatPref) -> Unit,
     palette: VidmaPalette,
 ) {
@@ -673,7 +700,10 @@ private fun AudioStudio(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(text = "AUDIO FORMAT", style = MaterialTheme.typography.labelSmall.copy(color = VidmaBase.TextLow))
             Spacer(Modifier.weight(1f))
-            Text(text = "FFmpeg conversion", style = MaterialTheme.typography.labelSmall.copy(color = palette.secondary))
+            Text(
+                text = if (ffmpegReady) "FFmpeg conversion" else "Source audio · lite mode",
+                style = MaterialTheme.typography.labelSmall.copy(color = palette.secondary),
+            )
         }
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(AudioFormatPref.entries.toList()) { f ->

@@ -1,5 +1,7 @@
 package com.vidma.downloader.ui.components.media
 
+import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -16,9 +18,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -105,7 +105,7 @@ fun TaskRow(
                 }
                 DownloadState.Failed -> {
                     Icon(
-                        imageVector = Icons.Rounded.ErrorOutline,
+                        imageVector = Icons.Rounded.Warning,
                         contentDescription = null,
                         tint = palette.danger,
                         modifier = Modifier
@@ -188,11 +188,11 @@ fun TaskRow(
             when {
                 task.isActive -> TrailingAction(onClick = { onCancel(task.id) }, icon = Icons.Rounded.Close, tint = palette.danger)
                 task.state == DownloadState.Failed -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    TrailingAction(onClick = { onRetry(task.id) }, icon = Icons.Rounded.Replay, tint = palette.secondary)
+                    TrailingAction(onClick = { onRetry(task.id) }, icon = Icons.Rounded.Refresh, tint = palette.secondary)
                     TrailingAction(onClick = { onDismiss(task.id) }, icon = Icons.Rounded.Close, tint = VidmaBase.TextLow)
                 }
                 task.state == DownloadState.Cancelled -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    TrailingAction(onClick = { onRetry(task.id) }, icon = Icons.Rounded.Replay, tint = VidmaBase.TextMid)
+                    TrailingAction(onClick = { onRetry(task.id) }, icon = Icons.Rounded.Refresh, tint = VidmaBase.TextMid)
                     TrailingAction(onClick = { onDismiss(task.id) }, icon = Icons.Rounded.Close, tint = VidmaBase.TextLow)
                 }
                 task.state == DownloadState.Completed -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

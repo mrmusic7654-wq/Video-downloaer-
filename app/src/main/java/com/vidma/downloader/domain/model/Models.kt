@@ -94,3 +94,18 @@ data class MediaSummary(
     val platformLabel: String
         get() = extractor?.takeIf { it.isNotBlank() } ?: "Web"
 }
+
+/**
+ * Normalised position for the browser's floating download action.
+ * Storing fractions instead of pixels keeps the placement stable across
+ * phones, tablets, rotation and font/display-size changes.
+ */
+data class FabPosition(
+    val xFraction: Float = 0.88f,
+    val yFraction: Float = 0.82f,
+) {
+    fun clamped(): FabPosition = FabPosition(
+        xFraction = xFraction.coerceIn(0f, 1f),
+        yFraction = yFraction.coerceIn(0f, 1f),
+    )
+}

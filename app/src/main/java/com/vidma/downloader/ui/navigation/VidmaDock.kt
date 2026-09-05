@@ -1,5 +1,9 @@
 package com.vidma.downloader.ui.navigation
 
+import com.vidma.downloader.ui.components.core.VidmaIcons
+import androidx.compose.material.icons.rounded.DateRange
+import androidx.compose.material.icons.rounded.LocationOn
+import androidx.compose.material.icons.rounded.List
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -21,9 +25,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.Public
-import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -53,14 +54,15 @@ enum class VidmaTab(
     val label: String,
     val icon: ImageVector,
 ) {
-    Home("home", "Download", Icons.Rounded.Download),
-    Library("library", "Library", Icons.Rounded.VideoLibrary),
-    Browser("browser", "Browser", Icons.Rounded.Public),
+    Home("home", "Download", VidmaIcons.Download),
+    Downloads("downloads", "Progress", Icons.Rounded.DateRange),
+    Library("library", "Library", Icons.Rounded.List),
+    Browser("browser", "Browser", Icons.Rounded.LocationOn),
 }
 
 /**
- * VidmaDock — floating glass pill with three tabs and an active-download
- * badge on the Download tab.
+ * VidmaDock — floating glass pill with capture, progress, library and
+ * browser tabs plus an active-download badge.
  */
 @Composable
 fun VidmaDock(
@@ -100,7 +102,7 @@ fun VidmaDock(
             DockItem(
                 tab = tab,
                 selected = tab == selected,
-                badge = if (tab == VidmaTab.Home) activeDownloads else 0,
+                badge = if (tab == VidmaTab.Home || tab == VidmaTab.Downloads) activeDownloads else 0,
                 onClick = { onSelect(tab) },
                 modifier = Modifier.weight(1f),
                 palette = palette,

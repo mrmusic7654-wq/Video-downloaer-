@@ -2,10 +2,12 @@ package com.vidma.downloader.data.store
 
 import android.content.Context
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.vidma.downloader.data.model.HistoryRecord
+import com.vidma.downloader.domain.model.FabPosition
 import com.vidma.downloader.domain.model.MediaKind
 import com.vidma.downloader.ui.theme.AccentPreset
 import kotlinx.coroutines.flow.Flow
@@ -70,6 +72,26 @@ class VidmaPrefs(private val context: Context) {
     suspend fun setPublicStorage(enabled: Boolean) {
         publicStorageNow = enabled
         context.vidmaDataStore.edit { it[publicStorageKey] = if (enabled) 1 else 0 }
+    }
+
+    // ---- browser floating action placement ----
+    // Fractions deliberately avoid storing density-dependent pixel values.
+    private val fabXKey = floatPreferencesKey("download_fab_x")
+    private val fabYKey = floatPreferencesKey("download_fab_y")
+
+    val downloadFabPositionFlow: Flow<FabPosition> = context.vidmaDataStore.data.map { prefs ->
+        FabPosition(
+            xFraction = (prefs[fabXKey] ?: FabPosition().xFraction).coerceIn(0f, 1f),
+            yFraction = (prefs[fabYKey] ?: FabPosition().yFraction).coerceIn(0f, 1f),
+        )
+    }
+
+    suspend fun setDownloadFabPosition(position: FabPosition) {
+        val safe = position.clamped()
+        context.vidmaDataStore.edit {
+            it[fabXKey] = safe.xFraction
+            it[fabYKey] = safe.yFraction
+        }
     }
 
     // ---- library history ----
