@@ -55,8 +55,6 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.activity.compose.BackHandler
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vidma.downloader.domain.model.FabPosition
-import com.vidma.downloader.domain.model.MediaKind
-import com.vidma.downloader.features.downloader.DownloaderViewModel
 import com.vidma.downloader.ui.components.core.GlassCard
 import com.vidma.downloader.ui.components.core.GlassTextField
 import com.vidma.downloader.ui.components.core.GradientLinearBar
@@ -64,7 +62,6 @@ import com.vidma.downloader.ui.components.core.VidmaIconButton
 import com.vidma.downloader.ui.theme.LocalVidmaPalette
 import com.vidma.downloader.ui.theme.VidmaBase
 import com.vidma.downloader.ui.theme.VidmaPalette
-import com.vidma.downloader.util.hostOf
 import com.vidma.downloader.util.isWebPageUrl
 
 private val QuickSites = listOf(
@@ -80,7 +77,7 @@ private val QuickSites = listOf(
 @Composable
 fun BrowserScreen(
     browserVm: BrowserViewModel,
-    downloaderVm: DownloaderViewModel,
+    onSetupDownload: (String, String?) -> Unit,
     palette: VidmaPalette = LocalVidmaPalette.current,
 ) {
     val haptics = LocalHapticFeedback.current
@@ -198,14 +195,10 @@ fun BrowserScreen(
                 DownloadPageFab(
                     onClick = {
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        downloaderVm.startUrlDirect(
-                            url = currentUrl,
-                            kind = MediaKind.Video,
-                            requestLabel = "Page video · mp4",
-                            title = pageTitle.takeIf { it.isNotBlank() }?.let { "$it — ${hostOf(currentUrl)}" }
-                                ?: hostOf(currentUrl),
-                            cover = null,
-                        )
+                        // Resolve the page through the same format studio as a
+                        // pasted link so the user can pick Video/Audio, quality
+                        // and container before the download starts.
+                        onSetupDownload(currentUrl, pageTitle.takeIf { it.isNotBlank() })
                     },
                     modifier = Modifier
                         .offset { fabOffset }

@@ -38,6 +38,7 @@ interface DownloadRepository {
         title: String? = null,
         coverUrl: String? = null,
         durationSec: Int = 0,
+        videoOnly: Boolean = false,
     ): String
 
     fun cancelTask(id: String)

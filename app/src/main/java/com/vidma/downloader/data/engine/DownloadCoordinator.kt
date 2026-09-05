@@ -56,6 +56,7 @@ class DownloadCoordinator(
         val coverUrl: String?,
         val durationSec: Int,
         val toPublic: Boolean,
+        val videoOnly: Boolean = false,
     )
 
     // Touched from main (start/cancel/retry/remove) and IO (task completion),
@@ -75,12 +76,14 @@ class DownloadCoordinator(
         coverUrl: String?,
         durationSec: Int,
         toPublic: Boolean,
+        videoOnly: Boolean = false,
     ): String {
         val id = UUID.randomUUID().toString()
         val p = StartParams(
             url = url, kind = kind, selector = selector, audioFormat = audioFormat,
             containerExt = containerExt, requestLabel = requestLabel, title = title,
             coverUrl = coverUrl, durationSec = durationSec, toPublic = toPublic,
+            videoOnly = videoOnly,
         )
         params[id] = p
         tasksMap.update { current ->
@@ -129,6 +132,7 @@ class DownloadCoordinator(
             url = p.url, kind = p.kind, selector = p.selector, audioFormat = p.audioFormat,
             containerExt = p.containerExt, requestLabel = p.requestLabel, title = p.title,
             coverUrl = p.coverUrl, durationSec = p.durationSec, toPublic = p.toPublic,
+            videoOnly = p.videoOnly,
         )
     }
 
@@ -265,15 +269,23 @@ class DownloadCoordinator(
         val postProcess = YtDlpEngine.ffmpegReady.value
         when (p.kind) {
             MediaKind.Video -> {
-                // Separate bestvideo+bestaudio streams require FFmpeg. The
-                // lean build deliberately selects a single muxed stream.
-                request.addOption(
-                    "-f",
-                    if (postProcess) p.selector ?: "bv*+ba/b"
-                    else FormatRules.singleStreamVideoSelector(extractHeight(p.selector)),
-                )
-                if (postProcess) {
-                    p.containerExt?.let { request.addOption("--merge-output-format", it) }
+                if (p.videoOnly) {
+                    // User asked for the video stream only (no audio track).
+                    // No merging/remuxing is needed, so this works in the lean
+                    // build too; the selector falls back to a muxed file when a
+                    // site only serves combined streams.
+                    request.addOption("-f", p.selector ?: "bestvideo/best")
+                } else {
+                    // Separate bestvideo+bestaudio streams require FFmpeg. The
+                    // lean build deliberately selects a single muxed stream.
+                    request.addOption(
+                        "-f",
+                        if (postProcess) p.selector ?: "bv*+ba/b"
+                        else FormatRules.singleStreamVideoSelector(extractHeight(p.selector)),
+                    )
+                    if (postProcess) {
+                        p.containerExt?.let { request.addOption("--merge-output-format", it) }
+                    }
                 }
             }
             MediaKind.Audio -> {
@@ -294,26 +306,69 @@ class DownloadCoordinator(
     private fun extractHeight(selector: String?): Int? =
         Regex("height<=([0-9]+)").find(selector.orEmpty())?.groupValues?.getOrNull(1)?.toIntOrNull()
 
+    /**
+     * A single yt-dlp 'progress' line, parsed tolerantly. The bundled
+     * youtubedl-android StreamProcessExtractor only reports a percent when its
+     * own regex matches (it requires a decimal point and an 'ETA MM:SS' tail).
+     * On many current yt-dlp releases — and almost always on fragment/HLS and
+     * direct-format downloads — that regex misses, so the progress bar froze at
+     * 0% even though the file was downloading. This parser handles integer and
+     * decimal percents and an optional ETA so the UI actually moves.
+     */
+    data class RawProgress(val percent: Float?, val eta: Long?)
+
+    private val dlPercentRegex = Regex("""\[download]\s*(\d+(?:\.\d+)?)%""")
+    private val dlEtaRegex = Regex("""\bETA\s+(\d{1,3}):(\d{2})\b""")
+    private val dlNARegex = Regex("""\bETA\s+(?:N/?A|--|unknown|∞)\b""", RegexOption.IGNORE_CASE)
+
+    private fun parseRawProgress(line: String): RawProgress {
+        var percent: Float? = null
+        dlPercentRegex.find(line)?.groupValues?.getOrNull(1)?.toFloatOrNull()?.let { p ->
+            if (p in 0f..100f) percent = p
+        }
+        var eta: Long? = null
+        dlEtaRegex.find(line)?.let { m ->
+            val min = m.groupValues[1].toLongOrNull()
+            val sec = m.groupValues[2].toLongOrNull()
+            if (min != null && sec != null) eta = min * 60 + sec
+        }
+        if (eta == null && dlNARegex.containsMatchIn(line)) eta = -1L
+        return RawProgress(percent, eta)
+    }
+
     private fun onEngineLine(id: String, percent: Float, eta: Long, line: String) {
         val current = tasksMap.value[id] ?: return
         val trimmed = line.trim().take(160)
-        if (percent >= 0f && percent <= 100f) {
-            val phase = if (percent >= 99.5f) DownloadState.Processing else DownloadState.Downloading
+
+        // The library already parsed a valid percent → trust it. Otherwise
+        // derive it from the raw line so the bar still advances.
+        val libPercent = if (percent >= 0f && percent <= 100f) percent else null
+        val raw = parseRawProgress(line)
+        val effectivePercent = libPercent ?: raw.percent
+        val effectiveEta = if (eta >= 0L) eta else (raw.eta ?: eta)
+
+        if (effectivePercent != null) {
+            val phase = if (effectivePercent >= 99.5f) DownloadState.Processing else DownloadState.Downloading
             update(id) {
                 copy(
                     state = phase,
-                    progress = percent / 100f,
-                    etaSeconds = eta,
+                    progress = effectivePercent / 100f,
+                    etaSeconds = effectiveEta,
                     statusLine = trimmed,
                 )
             }
             return
         }
+
+        // No numeric progress yet — sniff the state from the console line.
         val lower = line.lowercase()
         val state = when {
             lower.contains("merger") || lower.contains("extractaudio") ||
                 lower.contains("videoremuxer") || lower.contains("ffmpeg") ||
-                lower.contains("fixup") -> DownloadState.Processing
+                lower.contains("fixup") || lower.contains("video-only") ||
+                lower.contains("post-process") || lower.contains("destination") -> DownloadState.Processing
+            lower.contains("resolving") || lower.contains("extract") ||
+                lower.contains("looking") || lower.contains("identify") -> DownloadState.Resolving
             else -> current.state
         }
         if (trimmed.isNotEmpty()) {
