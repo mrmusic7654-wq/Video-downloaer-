@@ -254,7 +254,7 @@ fun SettingsScreen(
     if (confirmClear) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { confirmClear = false },
-            containerColor = Color(0xFF151931),
+            containerColor = Color(0xFF0E1118),
             titleContentColor = VidmaBase.TextHigh,
             textContentColor = VidmaBase.TextMid,
             title = { Text("Clear entire library?") },

@@ -73,9 +73,6 @@ data class CaptureRequest(
 
 /** Lifecycle of one download task. */
 enum class DownloadState {
-    /** Waiting for an engine slot (not yet used — kept for queue semantics). */
-    Queued,
-
     /** yt-dlp is extracting metadata / resolving the URL. */
     Resolving,
 
@@ -101,22 +98,33 @@ data class DownloadTask(
     val kind: MediaKind = MediaKind.Video,
     /** Human label of what was requested, e.g. "1080p · mp4". */
     val requestLabel: String = "",
-    val state: DownloadState = DownloadState.Queued,
+    val state: DownloadState = DownloadState.Resolving,
     val progress: Float = 0f,
     val etaSeconds: Long = -1,
     /** Last raw progress line from the engine (nice console feel). */
     val statusLine: String = "",
+    /** Real-time transfer speed in bytes/sec when known. */
+    val speedBytesPerSec: Long = 0L,
+    /** Bytes already received when known. */
+    val bytesDownloaded: Long = 0L,
+    /** Estimated total size in bytes when known. */
+    val totalBytes: Long = 0L,
     val error: String? = null,
     /** Cover: local file path or https URL, when known. */
     val coverUrl: String? = null,
     val startedAtMs: Long = 0L,
 ) {
     val isActive: Boolean
-        get() = state == DownloadState.Queued || state == DownloadState.Resolving ||
+        get() = state == DownloadState.Resolving ||
             state == DownloadState.Downloading || state == DownloadState.Processing ||
             state == DownloadState.Finishing
 
     val isFailed: Boolean get() = state == DownloadState.Failed
+
+    val isTerminal: Boolean
+        get() = state == DownloadState.Completed ||
+            state == DownloadState.Failed ||
+            state == DownloadState.Cancelled
 }
 
 /** A finished, library-grade media item. */
@@ -149,9 +157,47 @@ data class MediaSummary(
     val availableHeights: List<Int> = emptyList(),
     val viewCount: Long? = null,
     val likeCount: Long? = null,
+    /**
+     * Full, real list of formats the engine understood for this media.
+     * One row per stream the platform exposes (separate video/audio, merged,
+     * DASH/HLS, etc). Each format already has a usable file size estimate
+     * so the UI can show "480p · mp4 · 12.4 MB" before the user downloads.
+     */
+    val availableFormats: List<MediaFormat> = emptyList(),
+    /** A representative "best" merged video+audio format (Auto path). */
+    val bestMergedFormat: MediaFormat? = null,
 ) {
     val platformLabel: String
         get() = extractor?.takeIf { it.isNotBlank() } ?: "Web"
+}
+
+/**
+ * One stream exposed by the engine for a given URL — used to power the
+ * "Formats" sheet on the Downloader tab (the user picks what to download
+ * by browsing thumbnails + size, not by guessing).
+ */
+data class MediaFormat(
+    /** Stable id from the engine (format_id / itag / representation id). */
+    val id: String,
+    /** Pretty label: "1080p · mp4" / "Audio · m4a" / "2160p60 · webm". */
+    val label: String,
+    /** High-level kind — used to filter the sheet and pick the right path. */
+    val kind: MediaKind,
+    /** Vertical resolution when known (0 = audio / unknown). */
+    val height: Int = 0,
+    /** Frames per second when known. */
+    val fps: Int = 0,
+    /** Codec label (avc1, vp9, av1, mp4a, opus …) when known. */
+    val vcodec: String? = null,
+    val acodec: String? = null,
+    /** Container/extension the engine would write. */
+    val ext: String,
+    /** Estimated on-disk size in bytes (0 when unknown). */
+    val sizeBytes: Long = 0,
+    /** "video" / "audio" / "video+audio" — used to render the row icon. */
+    val mediaType: String = "video+audio",
+    /** True if the format is audio-only (no video stream). */
+    val isAudioOnly: Boolean get() = kind == MediaKind.Audio
 }
 
 /**

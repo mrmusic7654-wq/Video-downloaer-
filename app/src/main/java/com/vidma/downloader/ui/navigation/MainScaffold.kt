@@ -54,6 +54,10 @@ import com.vidma.downloader.ui.theme.VidmaBase
 
 /**
  * App shell: bottom dock + active-download tray + NavHost + global toast.
+ *
+ * The bottom dock no longer carries a Browser tab. The in-app browser is
+ * opened *on demand* from the home screen (second search bar) and lives
+ * as its own full-screen route.
  */
 @Composable
 fun MainScaffold(
@@ -69,6 +73,15 @@ fun MainScaffold(
     val route = backStack?.destination?.route
     val selectedTab = VidmaTab.entries.firstOrNull { it.route == route }
 
+    // Watch the viewmodel's "open browser with X" trigger and navigate.
+    val openBrowserWith by downloaderVm.openBrowserWith.collectAsStateWithLifecycle()
+    LaunchedEffect(openBrowserWith) {
+        val target = openBrowserWith ?: return@LaunchedEffect
+        downloaderVm.consumeOpenBrowser()
+        browserVm.open(target)
+        navController.navigate(VidmaTab.Browser.route) { launchSingleTop = true }
+    }
+
     Scaffold(
         containerColor = Color.Transparent,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -81,7 +94,7 @@ fun MainScaffold(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 AnimatedVisibility(
-                    visible = active.isNotEmpty() && route != "downloads",
+                    visible = active.isNotEmpty() && route != "downloads" && route != VidmaTab.Browser.route,
                     enter = fadeIn() + scaleIn(initialScale = 0.92f),
                     exit = fadeOut() + scaleOut(targetScale = 0.95f),
                 ) {
@@ -98,7 +111,9 @@ fun MainScaffold(
                     selected = selectedTab ?: VidmaTab.Home,
                     onSelect = { tab ->
                         if (tab.route != route) {
-                            if (route == "settings" || route == "downloads") navController.popBackStack()
+                            if (route == "settings" || route == "downloads" || route == VidmaTab.Browser.route) {
+                                navController.popBackStack()
+                            }
                             navController.navigateTo(tab)
                         }
                     },
@@ -118,7 +133,6 @@ fun MainScaffold(
                     DownloaderScreen(
                         vm = downloaderVm,
                         onOpenLibrary = { navController.navigateTo(VidmaTab.Library) },
-                        onOpenBrowser = { navController.navigateTo(VidmaTab.Browser) },
                         onOpenDownloads = { navController.navigate("downloads") { launchSingleTop = true } },
                         onOpenSettings = {
                             navController.navigate("settings") { launchSingleTop = true }
@@ -129,7 +143,11 @@ fun MainScaffold(
                     LibraryScreen(vm = downloaderVm)
                 }
                 composable(VidmaTab.Browser.route) {
-                    BrowserScreen(browserVm = browserVm, downloaderVm = downloaderVm)
+                    BrowserScreen(
+                        browserVm = browserVm,
+                        downloaderVm = downloaderVm,
+                        onClose = { navController.popBackStack() },
+                    )
                 }
                 composable("downloads") {
                     DownloadProgressScreen(
@@ -191,8 +209,8 @@ fun VidmaToast(
                     .background(
                         Brush.linearGradient(
                             listOf(
-                                Color(0xF5191038),
-                                Color(0xF50A0618),
+                                Color(0xF50A0E18),
+                                Color(0xF506080E),
                             )
                         )
                     )

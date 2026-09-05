@@ -12,6 +12,7 @@ import com.vidma.downloader.domain.model.DownloadTask
 import com.vidma.downloader.domain.model.EngineStatus
 import com.vidma.downloader.domain.model.FormatRules
 import com.vidma.downloader.domain.model.LibraryItem
+import com.vidma.downloader.domain.model.MediaFormat
 import com.vidma.downloader.domain.model.MediaKind
 import com.vidma.downloader.domain.model.MediaSummary
 import com.vidma.downloader.domain.model.QualityPreset
@@ -65,7 +66,7 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     val accent: StateFlow<AccentPreset> = appContainer.prefs.accentFlow
-        .stateIn(viewModelScope, SharingStarted.Eagerly, AccentPreset.Dream)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, AccentPreset.Platinum)
 
     val publicStorage: StateFlow<Boolean> = appContainer.prefs.publicStorageFlow
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
@@ -74,6 +75,13 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
 
     private val _urlText = MutableStateFlow("")
     val urlText: StateFlow<String> = _urlText.asStateFlow()
+
+    /**
+     * True when the user is using the *second* URL field (the link bar).
+     * The first field is a search bar that opens the in-app browser.
+     */
+    private val _searchText = MutableStateFlow("")
+    val searchText: StateFlow<String> = _searchText.asStateFlow()
 
     private val _kind = MutableStateFlow(MediaKind.Video)
     val kind: StateFlow<MediaKind> = _kind.asStateFlow()
@@ -97,6 +105,17 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
     private val _transient = MutableStateFlow<String?>(null)
     val transient: StateFlow<String?> = _transient.asStateFlow()
 
+    /**
+     * Set when the user wants to open the in-app browser with a query /
+     * URL. The home screen reacts to this and navigates accordingly.
+     */
+    private val _openBrowserWith = MutableStateFlow<String?>(null)
+    val openBrowserWith: StateFlow<String?> = _openBrowserWith.asStateFlow()
+
+    fun consumeOpenBrowser() {
+        _openBrowserWith.value = null
+    }
+
     /** Retains metadata of the *last resolved* URL for the start button. */
     private var readySummary: MediaSummary? = null
     private var fetchJob: Job? = null
@@ -111,6 +130,19 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
             readySummary = null
             _fetchPhase.value = FetchPhase.Idle
         }
+    }
+
+    fun onSearchChange(text: String) {
+        _searchText.value = text
+    }
+
+    fun onSearchSubmit() {
+        val raw = _searchText.value.trim()
+        if (raw.isEmpty()) return
+        val url = normalizeUrl(raw) ?: "https://www.google.com/search?q=" +
+            java.net.URLEncoder.encode(raw, "UTF-8")
+        _openBrowserWith.value = url
+        _searchText.value = ""
     }
 
     fun onKindChange(kind: MediaKind) {
@@ -133,6 +165,10 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         _urlText.value = ""
         _fetchPhase.value = FetchPhase.Idle
         readySummary = null
+    }
+
+    fun clearSearch() {
+        _searchText.value = ""
     }
 
     /** Handle a URL shared into vidma (SEND / VIEW intents). */
@@ -189,34 +225,46 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
 
     // ---------------- download actions ----------------
 
-    fun startDownload() {
+    /**
+     * Quick-download the engine's "best" stream — used by the [Download]
+     * icon in the studio header when the user wants the easy path. (The
+     * Formats sheet also calls this for each picked row, with [format]
+     * pointing at the user's selection.)
+     */
+    fun startDownload(format: MediaFormat? = null) {
         val summary = readySummary ?: run {
-            _transient.value = "Resolve the link first — press the search arrow."
+            _transient.value = "Resolve the link first — paste a link and press Resolve."
             return
         }
-        val k = _kind.value
-        val label = if (k == MediaKind.Audio && !ffmpegReady.value) {
-            "Source audio"
-        } else {
-            FormatRules.requestLabel(k, _quality.value, _container.value, _audioFormat.value)
-        }
+        val k = format?.kind ?: _kind.value
+        val label = format?.label
+            ?: if (k == MediaKind.Audio && !ffmpegReady.value) "Source audio"
+            else FormatRules.requestLabel(k, _quality.value, _container.value, _audioFormat.value)
         repo.startDownload(
             url = summary.url,
             kind = k,
-            selector = if (k == MediaKind.Video) {
+            selector = if (k == MediaKind.Video && format == null) {
                 FormatRules.videoSelector(_quality.value.height)
             } else null,
-            audioFormat = if (k == MediaKind.Audio) _audioFormat.value.ytArg else null,
-            containerExt = _container.value.ext.takeIf { k == MediaKind.Video },
+            audioFormat = if (k == MediaKind.Audio && format == null) _audioFormat.value.ytArg else null,
+            containerExt = if (k == MediaKind.Video && format == null) {
+                _container.value.ext.takeIf { k == MediaKind.Video }
+            } else null,
             requestLabel = label,
             title = summary.title,
             coverUrl = summary.thumbnailUrl,
             durationSec = summary.durationSec,
+            formatId = format?.id,
+            formatHeight = format?.height ?: 0,
+            formatFps = format?.fps ?: 0,
+            formatVcodec = format?.vcodec,
+            formatAcodec = format?.acodec,
+            formatExt = format?.ext,
         )
-        _transient.value = if (k == MediaKind.Video) {
-            "Downloading “${summary.title.take(48)}”…"
-        } else {
-            "Extracting ${_audioFormat.value.label} audio…"
+        _transient.value = when {
+            k == MediaKind.Audio -> "Extracting audio · ${format?.ext ?: _audioFormat.value.label}"
+            format != null -> "Downloading ${format.label}…"
+            else -> "Downloading “${summary.title.take(48)}”…"
         }
     }
 
@@ -299,12 +347,43 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         _transient.value = "Download cancelled"
     }
 
+    fun pauseTask(id: String) {
+        repo.pauseTask(id)
+        _transient.value = "Paused"
+    }
+
+    fun resumeTask(id: String) {
+        repo.resumeTask(id)
+        _transient.value = "Resuming…"
+    }
+
     fun retryTask(id: String) {
         repo.retryTask(id)
         _transient.value = "Retrying…"
     }
 
     fun removeTask(id: String) = repo.removeTask(id)
+
+    /** Remove a batch of tasks (used by the Progress screen bulk action). */
+    fun removeTasks(ids: List<String>) {
+        ids.forEach { repo.removeTask(it) }
+        if (ids.isNotEmpty()) _transient.value = "Removed ${ids.size} item${if (ids.size == 1) "" else "s"}"
+    }
+
+    fun pauseAllActive() {
+        repo.pauseAllActive()
+        _transient.value = "All downloads paused"
+    }
+
+    fun resumeAllFailed() {
+        repo.resumeAllFailed()
+        _transient.value = "Retrying failed downloads"
+    }
+
+    fun clearTerminal() {
+        repo.clearTerminal()
+        _transient.value = "Cleared finished downloads"
+    }
 
     // ---------------- library ----------------
 

@@ -58,6 +58,12 @@ class DownloadRepositoryImpl(
         coverUrl: String?,
         durationSec: Int,
         directSource: Boolean,
+        formatId: String?,
+        formatHeight: Int,
+        formatFps: Int,
+        formatVcodec: String?,
+        formatAcodec: String?,
+        formatExt: String?,
     ): String = coordinator.start(
         url = url,
         kind = kind,
@@ -70,13 +76,29 @@ class DownloadRepositoryImpl(
         durationSec = durationSec,
         toPublic = prefs.publicStorageNow,
         directSource = directSource,
+        formatId = formatId,
+        formatHeight = formatHeight,
+        formatFps = formatFps,
+        formatVcodec = formatVcodec,
+        formatAcodec = formatAcodec,
+        formatExt = formatExt,
     )
 
     override fun cancelTask(id: String) = coordinator.cancel(id)
 
     override fun retryTask(id: String) = coordinator.retry(id)
 
+    override fun pauseTask(id: String) = coordinator.pause(id)
+
+    override fun resumeTask(id: String) = coordinator.resume(id)
+
     override fun removeTask(id: String) = coordinator.remove(id)
+
+    override fun pauseAllActive() = coordinator.pauseAllActive()
+
+    override fun resumeAllFailed() = coordinator.resumeAllFailed()
+
+    override fun clearTerminal() = coordinator.clearTerminal()
 
     override suspend fun deleteLibraryItem(item: LibraryItem): Boolean {
         val cover = item.coverUri?.takeUnless { it.startsWith("http") }

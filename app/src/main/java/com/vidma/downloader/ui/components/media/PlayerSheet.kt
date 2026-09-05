@@ -77,7 +77,7 @@ fun PlayerSheet(
                 .clip(RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp))
                 .background(
                     Brush.verticalGradient(
-                        listOf(Color(0xFF151931), Color(0xFF0A0D20)),
+                        listOf(Color(0xFF0E1118), Color(0xFF06080E)),
                     )
                 )
                 .navigationBarsPadding()

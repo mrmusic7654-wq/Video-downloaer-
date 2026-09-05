@@ -89,6 +89,7 @@ object DirectHttpEngine {
                 var lastUpdate = 0L
                 var lastBytes = 0L
                 var lastTime = System.currentTimeMillis()
+                var lastSpeed = 0L
 
                 onProgress(0f, -1L, "Direct media fallback")
                 body.byteStream().use { input ->
@@ -100,18 +101,19 @@ object DirectHttpEngine {
                             output.write(buffer, 0, count)
                             read += count
                             val now = System.currentTimeMillis()
-                            if (now - lastUpdate >= 180L || (total > 0 && read == total)) {
+                            if (now - lastUpdate >= 120L || (total > 0 && read == total)) {
                                 val speed = if (now > lastTime) {
-                                    (read - lastBytes).toDouble() / ((now - lastTime) / 1000.0)
-                                } else 0.0
-                                val eta = if (total > 0 && speed > 0.0) {
-                                    ((total - read) / speed).toLong().coerceAtLeast(0L)
+                                    ((read - lastBytes).toDouble() / ((now - lastTime) / 1000.0)).toLong()
+                                } else 0L
+                                val eta = if (total > 0 && speed > 0L) {
+                                    ((total - read) / speed).coerceAtLeast(0L)
                                 } else -1L
                                 val percent = if (total > 0) read * 100f / total else -1f
+                                lastSpeed = speed
                                 onProgress(
                                     percent,
                                     eta,
-                                    "Direct media · ${read / 1024} KB",
+                                    formatLine("Direct media", read, total, speed, eta),
                                 )
                                 lastUpdate = now
                                 lastBytes = read
@@ -140,6 +142,39 @@ object DirectHttpEngine {
 
     fun cancel(processId: String) {
         calls.remove(processId)?.cancel()
+    }
+
+    private fun formatLine(
+        prefix: String,
+        done: Long,
+        total: Long,
+        speed: Long,
+        eta: Long,
+    ): String {
+        val speedText = if (speed > 0) humanBytes(speed) + "/s" else "—"
+        val pct = if (total > 0) " · ${(done * 100 / total).coerceIn(0, 100)}%" else ""
+        val etaText = if (eta >= 0) " · ETA ${humanDuration(eta)}" else ""
+        return "$prefix · $speedText$pct$etaText"
+    }
+
+    private fun humanBytes(b: Long): String {
+        if (b <= 0L) return "0 B"
+        val units = arrayOf("B", "KB", "MB", "GB")
+        var v = b.toDouble()
+        var i = 0
+        while (v >= 1024.0 && i < units.lastIndex) {
+            v /= 1024.0; i++
+        }
+        return if (i == 0) "$b B" else String.format(Locale.US, "%.1f %s", v, units[i])
+    }
+
+    private fun humanDuration(sec: Long): String {
+        val s = sec.toInt().coerceAtLeast(0)
+        val h = s / 3600
+        val m = (s % 3600) / 60
+        val ss = s % 60
+        return if (h > 0) String.format(Locale.US, "%d:%02d:%02d", h, m, ss)
+        else String.format(Locale.US, "%d:%02d", m, ss)
     }
 
     private fun extensionFrom(url: String, contentType: String?): String {

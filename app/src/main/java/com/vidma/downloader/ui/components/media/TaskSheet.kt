@@ -51,7 +51,7 @@ fun TaskQueueSheet(
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp))
                 .background(
-                    Brush.verticalGradient(listOf(Color(0xFF161A34), Color(0xFF0A0C1E))),
+                    Brush.verticalGradient(listOf(Color(0xFF0E1118), Color(0xFF06080E))),
                 )
                 .navigationBarsPadding(),
         ) {

@@ -55,8 +55,8 @@ class VidmaPrefs(private val context: Context) {
     private val accentKey = intPreferencesKey("accent_preset")
 
     val accentFlow: Flow<AccentPreset> = context.vidmaDataStore.data.map { prefs ->
-        val idx = prefs[accentKey] ?: AccentPreset.Dream.ordinal
-        AccentPreset.entries.getOrElse(idx) { AccentPreset.Dream }
+        val idx = prefs[accentKey] ?: AccentPreset.Platinum.ordinal
+        AccentPreset.entries.getOrElse(idx) { AccentPreset.Platinum }
     }
 
     suspend fun setAccent(preset: AccentPreset) {

@@ -25,41 +25,43 @@ val VidmaShapes = Shapes(
 
 @Composable
 fun VidmaTheme(
-    accent: AccentPreset = AccentPreset.Dream,
+    accent: AccentPreset = AccentPreset.Platinum,
     content: @Composable () -> Unit,
 ) {
     val palette = VidmaPalette(accent = accent)
-    // Purple-black surfaces: every container step lifts toward violet,
-    // so layered glass reads as "dreamy depth" instead of grey.
+    // Dark, cool surfaces with a touch of the accent on the container steps
+    // — the look is "premium minimalist" (deep ink, glassy hairline
+    // borders) rather than the previous dreamy violet. The accent carries
+    // all colour.
     val scheme = darkColorScheme(
         primary = palette.primary,
-        onPrimary = Color(0xFF0B0620),
-        primaryContainer = palette.primary.copy(alpha = 0.22f),
-        onPrimaryContainer = Color(0xFFEDE9FF),
+        onPrimary = Color(0xFF0A0D14),
+        primaryContainer = palette.primary.copy(alpha = 0.18f),
+        onPrimaryContainer = Color(0xFFEDF1F9),
         secondary = palette.secondary,
-        onSecondary = Color(0xFF191026),
-        secondaryContainer = palette.secondary.copy(alpha = 0.18f),
-        onSecondaryContainer = Color(0xFFF3EFFC),
+        onSecondary = Color(0xFF0A0D14),
+        secondaryContainer = palette.secondary.copy(alpha = 0.14f),
+        onSecondaryContainer = Color(0xFFF3F6FB),
         tertiary = palette.tertiary,
-        onTertiary = Color(0xFF1B0A2E),
+        onTertiary = Color(0xFF0A0D14),
         tertiaryContainer = palette.tertiary.copy(alpha = 0.2f),
-        onTertiaryContainer = Color(0xFFEFE7FF),
+        onTertiaryContainer = Color(0xFFE7ECF3),
         background = palette.inkBottom,
         onBackground = palette.textHigh,
-        surface = Color(0xFF0D0918),
+        surface = Color(0xFF0B0E16),
         onSurface = palette.textHigh,
-        surfaceVariant = Color(0xFF1A1430),
+        surfaceVariant = Color(0xFF14181F),
         onSurfaceVariant = palette.textMid,
-        surfaceContainerHighest = Color(0xFF221A3E),
-        surfaceContainerHigh = Color(0xFF1B1534),
-        surfaceContainer = Color(0xFF151027),
-        surfaceContainerLow = Color(0xFF100C1E),
-        surfaceContainerLowest = Color(0xFF080611),
-        outline = Color(0xFF443A6E),
+        surfaceContainerHighest = Color(0xFF1A1E27),
+        surfaceContainerHigh = Color(0xFF151921),
+        surfaceContainer = Color(0xFF11151C),
+        surfaceContainerLow = Color(0xFF0C0F16),
+        surfaceContainerLowest = Color(0xFF06080E),
+        outline = Color(0xFF3B4250),
         outlineVariant = palette.glassStrokeSoft,
         error = palette.danger,
         onError = Color.White,
-        errorContainer = palette.danger.copy(alpha = 0.2f),
+        errorContainer = palette.danger.copy(alpha = 0.18f),
         onErrorContainer = Color(0xFFFFDCE3),
         scrim = VidmaBase.Scrim,
     )
