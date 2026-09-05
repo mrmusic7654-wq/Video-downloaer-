@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Resource-shrinker keep file.
+
+    vidma ships the real yt-dlp extractor through youtubedl-android. That
+    library loads its bundled Python runtime and the `yt-dlp` script from the
+    library's own `raw/ytdlp` resource *reflectively*:
+        appContext.resources.openRawResource(R.raw.ytdlp)
+    and then unzips the `libpython.zip.so` native lib from `nativeLibraryDir`.
+    R8 cannot see those lookups, so when the release build runs with
+    `shrinkResources = true` it strips `raw/ytdlp` and `YoutubeDL.init()`
+    throws during the first run — the "Engine failed" symptom.
+
+    Keeping the bundled yt-dlp payload makes the engine present in every
+    minified release APK. `@raw/ytdlp` is the youtubedl-android resource
+    (declared as `R.raw.ytdlp`).
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@raw/ytdlp" />

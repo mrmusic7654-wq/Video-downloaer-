@@ -269,7 +269,14 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
     fun retryEngine() {
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { YtDlpEngine.initialize(getApplication()) }
-                .onFailure { _transient.value = "Engine failed: ${it.message?.take(80)}" }
+                .onFailure {
+                    // Prefer the engine's own (cause-chain) description over the
+                    // top-level message, which is often just "failed to initialize".
+                    val detail = YtDlpEngine.lastInitError.value
+                        ?: it.message
+                        ?: it.javaClass.simpleName
+                    _transient.value = "Engine failed: ${detail?.take(140)}"
+                }
         }
     }
 
