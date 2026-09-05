@@ -6,6 +6,7 @@ import com.vidma.downloader.data.storage.MediaStorage
 import com.vidma.downloader.data.store.VidmaPrefs
 import com.vidma.downloader.domain.model.DownloadState
 import com.vidma.downloader.domain.model.DownloadTask
+import com.vidma.downloader.domain.model.FormatRules
 import com.vidma.downloader.domain.model.MediaKind
 import com.yausername.youtubedl_android.YoutubeDLRequest
 import kotlinx.coroutines.CoroutineScope
@@ -14,8 +15,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.launch
@@ -82,16 +83,18 @@ class DownloadCoordinator(
             coverUrl = coverUrl, durationSec = durationSec, toPublic = toPublic,
         )
         params[id] = p
-        tasksMap.value = tasksMap.value + (id to DownloadTask(
-            id = id,
-            url = url,
-            title = title,
-            kind = kind,
-            requestLabel = requestLabel,
-            state = DownloadState.Queued,
-            coverUrl = coverUrl,
-            startedAtMs = System.currentTimeMillis(),
-        ))
+        tasksMap.update { current ->
+            current + (id to DownloadTask(
+                id = id,
+                url = url,
+                title = title,
+                kind = kind,
+                requestLabel = requestLabel,
+                state = DownloadState.Queued,
+                coverUrl = coverUrl,
+                startedAtMs = System.currentTimeMillis(),
+            ))
+        }
         val job = scope.launch {
             slots.acquire()
             try {
@@ -112,6 +115,7 @@ class DownloadCoordinator(
     fun cancel(id: String) {
         cancelled.add(id)
         YtDlpEngine.cancel(id)
+        DirectHttpEngine.cancel(id)
         val task = tasksMap.value[id]
         if (task != null && task.state == DownloadState.Queued) {
             update(id) { copy(state = DownloadState.Cancelled, progress = 0f, statusLine = "Cancelled") }
@@ -130,9 +134,15 @@ class DownloadCoordinator(
 
     fun remove(id: String) {
         params.remove(id)
+        val job = activeJobs.remove(id)
+        if (job?.isActive == true) {
+            cancelled.add(id)
+            YtDlpEngine.cancel(id)
+            DirectHttpEngine.cancel(id)
+            job.cancel()
+        }
         cancelled.remove(id)
-        activeJobs.remove(id)
-        tasksMap.value = tasksMap.value - id
+        tasksMap.update { current -> current - id }
     }
 
     private suspend fun runTask(id: String, p: StartParams) {
@@ -141,13 +151,43 @@ class DownloadCoordinator(
         val stagedDir = File(storage.stagingDir(), id).apply { mkdirs() }
         try {
             val template = stagedDir.absolutePath + File.separator + "%(title).90B [%(id)s].%(ext)s"
-            val exitCode = YtDlpEngine.execute(
-                context = appContext,
-                url = p.url,
-                processId = id,
-                kindSelector = { request -> configureRequest(request, p, template) },
-            ) { percent, eta, line ->
-                onEngineLine(id, percent, eta, line)
+            var engineFailure: String? = null
+            var exitCode = try {
+                YtDlpEngine.execute(
+                    context = appContext,
+                    url = p.url,
+                    processId = id,
+                    kindSelector = { request -> configureRequest(request, p, template) },
+                ) { percent, eta, line ->
+                    onEngineLine(id, percent, eta, line)
+                }
+            } catch (error: Exception) {
+                // A process/bootstrap exception should still get a chance to
+                // use the narrow OkHttp direct-media fallback below.
+                engineFailure = error.message?.take(240)
+                -1
+            }
+
+            // Direct CDN/file URLs do not need a second extractor. If yt-dlp
+            // cannot recognise one, the OkHttp path still gives the user a
+            // reliable download with the same progress UI.
+            var directOutput: File? = null
+            if (exitCode != 0 && id !in cancelled && DirectHttpEngine.canHandle(p.url)) {
+                update(id) {
+                    copy(
+                        state = DownloadState.Downloading,
+                        statusLine = "Trying direct media download…",
+                        error = null,
+                    )
+                }
+                directOutput = DirectHttpEngine.download(
+                    url = p.url,
+                    outputDir = stagedDir,
+                    title = p.title,
+                    processId = id,
+                    onProgress = { percent, eta, line -> onEngineLine(id, percent, eta, line) },
+                )
+                if (directOutput != null) exitCode = 0
             }
 
             if (id in cancelled) {
@@ -157,11 +197,12 @@ class DownloadCoordinator(
             }
 
             if (exitCode != 0) {
+                val detail = tasksMap.value[id]?.statusLine?.takeIf { it.isNotBlank() }
                 cleanupTaskDir(stagedDir)
                 update(id) {
                     copy(
                         state = DownloadState.Failed,
-                        error = "yt-dlp exited with code $exitCode",
+                        error = detail ?: engineFailure ?: "yt-dlp exited with code $exitCode",
                     )
                 }
                 return
@@ -169,7 +210,7 @@ class DownloadCoordinator(
 
             // ---- engine finished successfully: find the output file ----
             update(id) { copy(state = DownloadState.Processing, progress = 1f, statusLine = "Post-processing…") }
-            val output = findOutputFile(stagedDir)
+            val output = directOutput ?: findOutputFile(stagedDir)
             if (output == null) {
                 cleanupTaskDir(stagedDir)
                 update(id) {
@@ -187,9 +228,11 @@ class DownloadCoordinator(
                 ?: output.nameWithoutExtension.replace(Regex("\\s*\\[[^\\]]*]$"), "")
             update(id) { copy(title = mediaTitle) }
 
+            // Grab the thumbnail before publish() removes the staged media
+            // file. The old order silently lost every cover on successful jobs.
+            val coverPath = storage.takeCover(output, id)
             update(id) { copy(state = DownloadState.Finishing, statusLine = "Moving to Downloads…") }
             val published = storage.publish(output, p.kind, mediaTitle, p.toPublic)
-            val coverPath = storage.takeCover(output, id)
             cleanupTaskDir(stagedDir)
 
             when (published) {
@@ -219,19 +262,37 @@ class DownloadCoordinator(
 
     private fun configureRequest(request: YoutubeDLRequest, p: StartParams, template: String) {
         request.addOption("-o", template)
+        val postProcess = YtDlpEngine.ffmpegReady.value
         when (p.kind) {
             MediaKind.Video -> {
-                request.addOption("-f", p.selector ?: "bv*+ba/b")
-                p.containerExt?.let { request.addOption("--merge-output-format", it) }
+                // Separate bestvideo+bestaudio streams require FFmpeg. The
+                // lean build deliberately selects a single muxed stream.
+                request.addOption(
+                    "-f",
+                    if (postProcess) p.selector ?: "bv*+ba/b"
+                    else FormatRules.singleStreamVideoSelector(extractHeight(p.selector)),
+                )
+                if (postProcess) {
+                    p.containerExt?.let { request.addOption("--merge-output-format", it) }
+                }
             }
             MediaKind.Audio -> {
-                request.addOption("-f", "bestaudio/best")
-                request.addOption("-x")
-                request.addOption("--audio-format", p.audioFormat ?: "mp3")
-                request.addOption("--audio-quality", "0")
+                if (postProcess) {
+                    request.addOption("-f", "bestaudio/best")
+                    request.addOption("-x")
+                    request.addOption("--audio-format", p.audioFormat ?: "mp3")
+                    request.addOption("--audio-quality", "0")
+                } else {
+                    // Do not request -x when no converter is packaged. A
+                    // source m4a/opus file is preferable to a failed task.
+                    request.addOption("-f", FormatRules.sourceAudioSelector)
+                }
             }
         }
     }
+
+    private fun extractHeight(selector: String?): Int? =
+        Regex("height<=([0-9]+)").find(selector.orEmpty())?.groupValues?.getOrNull(1)?.toIntOrNull()
 
     private fun onEngineLine(id: String, percent: Float, eta: Long, line: String) {
         val current = tasksMap.value[id] ?: return
@@ -296,8 +357,10 @@ class DownloadCoordinator(
     }
 
     private fun update(id: String, transform: DownloadTask.() -> DownloadTask) {
-        val current = tasksMap.value[id] ?: return
-        tasksMap.value = tasksMap.value + (id to current.transform())
+        tasksMap.update { current ->
+            val task = current[id] ?: return@update current
+            current + (id to task.transform())
+        }
     }
 
     private fun findOutputFile(dir: File): File? =
@@ -311,7 +374,7 @@ class DownloadCoordinator(
         runCatching { dir.deleteRecursively() }
     }
 
-    /** Total bytes currently being written (for the queue pill). */
+    /** Number of active tasks (used by compact queue badges). */
     val activeCount: StateFlow<Int> = tasksMap.map { list -> list.values.count { it.isActive } }
         .stateIn(scope, SharingStarted.Eagerly, 0)
 

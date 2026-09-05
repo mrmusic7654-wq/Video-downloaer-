@@ -17,6 +17,7 @@ import com.vidma.downloader.domain.repository.DownloadRepository
 import com.vidma.downloader.ui.theme.AccentPreset
 import com.vidma.downloader.util.normalizeUrl
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -50,6 +51,10 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     val engineReady: StateFlow<Boolean> = repo.engineReady
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    /** Optional post-processing capability; the lean APK can still download. */
+    val ffmpegReady: StateFlow<Boolean> = YtDlpEngine.ffmpegReady
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     val accent: StateFlow<AccentPreset> = appContainer.prefs.accentFlow
@@ -87,12 +92,18 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
 
     /** Retains metadata of the *last resolved* URL for the start button. */
     private var readySummary: MediaSummary? = null
+    private var fetchJob: Job? = null
 
     // ---------------- url form ----------------
 
     fun onUrlChange(text: String) {
         _urlText.value = text
-        if (_fetchPhase.value is FetchPhase.Error) _fetchPhase.value = FetchPhase.Idle
+        val normalised = normalizeUrl(text)
+        if (readySummary?.url != normalised) {
+            fetchJob?.cancel()
+            readySummary = null
+            _fetchPhase.value = FetchPhase.Idle
+        }
     }
 
     fun onKindChange(kind: MediaKind) {
@@ -125,6 +136,8 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         } else {
             _lastSharedUrl.value = null
             _urlText.value = url
+            readySummary = null
+            _fetchPhase.value = FetchPhase.Idle
         }
     }
 
@@ -146,13 +159,13 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
             _fetchPhase.value = FetchPhase.Error("That doesn't look like a link — paste a video or page URL.")
             return
         }
-        if (!engineReady.value) {
-            _fetchPhase.value = FetchPhase.Error("The download engine is still starting… try again in a moment.")
-            return
-        }
+        // Do not reject a paste while the first-run runtime is unpacking.
+        // fetchMediaInfo initializes the engine on IO and the loading card
+        // gives immediate feedback instead of forcing a second tap.
         _urlText.value = url
         _fetchPhase.value = FetchPhase.Fetching
-        viewModelScope.launch {
+        fetchJob?.cancel()
+        fetchJob = viewModelScope.launch {
             val result = repo.fetchMediaInfo(url)
             _fetchPhase.value = result.fold(
                 onSuccess = {
@@ -175,7 +188,11 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
             return
         }
         val k = _kind.value
-        val label = FormatRules.requestLabel(k, _quality.value, _container.value, _audioFormat.value)
+        val label = if (k == MediaKind.Audio && !ffmpegReady.value) {
+            "Source audio"
+        } else {
+            FormatRules.requestLabel(k, _quality.value, _container.value, _audioFormat.value)
+        }
         repo.startDownload(
             url = summary.url,
             kind = k,

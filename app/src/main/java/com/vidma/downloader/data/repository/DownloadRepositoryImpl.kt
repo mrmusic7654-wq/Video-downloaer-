@@ -14,6 +14,7 @@ import com.vidma.downloader.domain.repository.DownloadRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.CancellationException
 
 /** Glues prefs + storage + engine coordinator behind the domain interface. */
 class DownloadRepositoryImpl(
@@ -30,12 +31,17 @@ class DownloadRepositoryImpl(
     override val library: Flow<List<LibraryItem>> =
         prefs.libraryFlow.map { records -> records.map { it.toDomain() } }
 
-    override suspend fun fetchMediaInfo(url: String): Result<MediaSummary> =
-        runCatching {
+    override suspend fun fetchMediaInfo(url: String): Result<MediaSummary> = try {
+        Result.success(
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 YtDlpEngine.fetchInfo(appContext, url)
-            }
-        }
+            },
+        )
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Throwable) {
+        Result.failure(error)
+    }
 
     override fun startDownload(
         url: String,

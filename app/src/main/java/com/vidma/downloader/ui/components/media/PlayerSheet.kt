@@ -1,5 +1,7 @@
 package com.vidma.downloader.ui.components.media
 
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.ArrowForward
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -20,8 +22,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.DeleteOutline
-import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -185,14 +185,14 @@ fun PlayerSheet(
                     )
                     ActionPill(
                         text = "Open",
-                        icon = Icons.Rounded.OpenInNew,
+                        icon = Icons.Rounded.ArrowForward,
                         onClick = onOpen,
                         modifier = Modifier.weight(1f),
                         palette = palette,
                     )
                     ActionPill(
                         text = "Delete",
-                        icon = Icons.Rounded.DeleteOutline,
+                        icon = Icons.Rounded.Delete,
                         onClick = onDelete,
                         modifier = Modifier.weight(1f),
                         danger = true,

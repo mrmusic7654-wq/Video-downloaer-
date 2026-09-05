@@ -1,27 +1,44 @@
 package com.vidma.downloader.features.browser
 
 import android.annotation.SuppressLint
+import android.app.Application
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
+import android.os.Build
+import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.vidma.downloader.VidmaApp
+import com.vidma.downloader.domain.model.FabPosition
+import com.vidma.downloader.util.hostOf
 import com.vidma.downloader.util.normalizeUrl
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import java.net.URLEncoder
 
 /**
- * Owns the single, process-lifetime [WebView] and all browser chrome state.
- * Holding the WebView in the ViewModel lets the native browser survive tab
- * switches (it is simply detached/reattached by Compose).
+ * Owns the single, process-lifetime WebView and all browser chrome state.
+ * Android's WebView provider is Chromium-based, so this uses the device's
+ * maintained Chromium runtime instead of embedding a second browser in the
+ * APK. The browser and URL resolver both feed the same downloader queue.
  */
-class BrowserViewModel : ViewModel() {
+class BrowserViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val prefs = (application as VidmaApp).container.prefs
 
     var addressText by mutableStateOf("")
     var currentUrl by mutableStateOf("")
@@ -37,6 +54,9 @@ class BrowserViewModel : ViewModel() {
     var canGoForward by mutableStateOf(false)
         private set
 
+    val fabPosition: StateFlow<FabPosition> = prefs.downloadFabPositionFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, FabPosition())
+
     private var webView: WebView? = null
     private var pendingUrl: String? = null
 
@@ -45,25 +65,41 @@ class BrowserViewModel : ViewModel() {
     fun obtainWebView(context: Context): WebView {
         webView?.let { return it }
         val view = WebView(context).apply {
+            // This is the system Chromium implementation, not an embedded
+            // browser binary. Keep its network/cache lifecycle in WebView.
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
-            settings.mediaPlaybackRequiresUserGesture = false
+            settings.databaseEnabled = true
             settings.loadsImagesAutomatically = true
             settings.useWideViewPort = true
             settings.loadWithOverviewMode = true
-            settings.builtInZoomControls = true
+            settings.cacheMode = WebSettings.LOAD_DEFAULT
+            settings.builtInZoomControls = false
             settings.displayZoomControls = false
-            settings.setSupportMultipleWindows(true)
+            settings.setSupportMultipleWindows(false)
+            settings.allowFileAccess = false
+            settings.allowContentAccess = true
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                settings.safeBrowsingEnabled = true
+            }
+            CookieManager.getInstance().setAcceptCookie(true)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+            }
             webViewClient = BrowserClient()
             webChromeClient = object : WebChromeClient() {
                 override fun onProgressChanged(webView: WebView?, newProgress: Int) {
-                    this@BrowserViewModel.progress = newProgress
+                    this@BrowserViewModel.progress = newProgress.coerceIn(0, 100)
                     isLoading = newProgress < 100
+                    refreshNavigationState(webView)
                 }
+
                 override fun onReceivedTitle(webView: WebView?, title: String?) {
-                    pageTitle = title?.take(120) ?: ""
+                    pageTitle = title?.take(120).orEmpty()
                 }
-                override fun onReceivedIcon(webView: WebView?, icon: Bitmap?) = Unit
             }
         }
         webView = view
@@ -78,11 +114,15 @@ class BrowserViewModel : ViewModel() {
     }
 
     fun onAddressSubmit(raw: String) {
-        val url = normalizeUrl(raw)
+        val input = raw.trim()
+        val url = normalizeUrl(input)
         if (url == null) {
-            // not a URL → friendly web search
-            val query = java.net.URLEncoder.encode(raw.trim(), "UTF-8")
-            load("https://duckduckgo.com/?q=$query")
+            if (input.isBlank()) return
+            // Chromium is the browser engine. Use a conventional search page
+            // for text input; the app does not ship a separate search/browser
+            // runtime and stays on the device Chromium provider.
+            val query = URLEncoder.encode(input, "UTF-8")
+            load("https://www.google.com/search?q=$query")
             return
         }
         addressText = url
@@ -103,21 +143,40 @@ class BrowserViewModel : ViewModel() {
     fun goBack() = webView?.takeIf { it.canGoBack() }?.goBack()
     fun goForward() = webView?.takeIf { it.canGoForward() }?.goForward()
     fun reload() = webView?.reload()
-    fun stopLoading() = webView?.stopLoading()
+    fun stopLoading() {
+        webView?.stopLoading()
+        isLoading = false
+    }
+
+    fun saveFabPosition(position: FabPosition) {
+        viewModelScope.launch(Dispatchers.IO) {
+            prefs.setDownloadFabPosition(position.clamped())
+        }
+    }
+
+    fun resetFabPosition() = saveFabPosition(FabPosition())
 
     fun onPageStarted(url: String) {
         currentUrl = url
         addressText = url
+        pageTitle = ""
+        progress = 0
         isLoading = true
     }
 
     fun onPageFinished(url: String) {
+        currentUrl = url
+        addressText = url
+        progress = 100
         isLoading = false
-        webView?.let {
-            canGoBack = it.canGoBack()
-            canGoForward = it.canGoForward()
-        }
-        if (pageTitle.isBlank()) pageTitle = com.vidma.downloader.util.hostOf(url)
+        refreshNavigationState(webView)
+        if (pageTitle.isBlank()) pageTitle = hostOf(url)
+    }
+
+    private fun refreshNavigationState(view: WebView?) {
+        val target = view ?: webView ?: return
+        canGoBack = target.canGoBack()
+        canGoForward = target.canGoForward()
     }
 
     private inner class BrowserClient : WebViewClient() {
@@ -133,6 +192,7 @@ class BrowserViewModel : ViewModel() {
             return handleNavigation(view?.context, url)
         }
 
+        @Suppress("DEPRECATION")
         override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
             val target = url ?: return false
             return handleNavigation(view?.context, target)
@@ -140,13 +200,14 @@ class BrowserViewModel : ViewModel() {
 
         private fun handleNavigation(context: Context?, url: String): Boolean {
             return when {
-                url.startsWith("http://") || url.startsWith("https://") -> false // keep in-app
+                url.startsWith("http://") || url.startsWith("https://") -> false
                 url.startsWith("about:") -> false
                 context == null -> false
                 else -> {
                     try {
                         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                     } catch (_: ActivityNotFoundException) {
+                        // An unsupported intent should not break the page.
                     }
                     true
                 }
@@ -157,19 +218,14 @@ class BrowserViewModel : ViewModel() {
             super.onPageFinished(view, url)
             url?.let { onPageFinished(it) }
         }
-
-        override fun onReceivedError(
-            view: WebView?,
-            errorCode: Int,
-            description: String?,
-            failingUrl: String?,
-        ) {
-            super.onReceivedError(view, errorCode, description, failingUrl)
-        }
     }
 
     override fun onCleared() {
-        runCatching { webView?.destroy() }
+        runCatching {
+            webView?.stopLoading()
+            webView?.loadUrl("about:blank")
+            webView?.destroy()
+        }
         webView = null
         super.onCleared()
     }

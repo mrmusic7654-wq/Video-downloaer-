@@ -1,5 +1,8 @@
 package com.vidma.downloader.features.settings
 
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.List
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
@@ -26,10 +29,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.DeleteSweep
-import androidx.compose.material.icons.rounded.FolderOpen
-import androidx.compose.material.icons.rounded.Palette
-import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -68,6 +67,7 @@ fun SettingsScreen(
     val accent by vm.accent.collectAsStateWithLifecycle()
     val publicStorage by vm.publicStorage.collectAsStateWithLifecycle()
     val engineReady by vm.engineReady.collectAsStateWithLifecycle()
+    val ffmpegReady by vm.ffmpegReady.collectAsStateWithLifecycle()
     val library by vm.library.collectAsStateWithLifecycle()
     var confirmClear by remember { mutableStateOf(false) }
 
@@ -108,7 +108,7 @@ fun SettingsScreen(
                 GlassCard(contentPadding = PaddingValues(18.dp)) {
                     Column {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            SettingIcon(Icons.Rounded.Palette, palette.tertiary)
+                            SettingIcon(Icons.Rounded.Star, palette.tertiary)
                             Spacer(Modifier.width(12.dp))
                             Column {
                                 Text("Aurora theme", style = MaterialTheme.typography.titleSmall.copy(color = VidmaBase.TextHigh))
@@ -143,7 +143,7 @@ fun SettingsScreen(
                 SectionTitle(text = "Downloads")
                 GlassCard(contentPadding = PaddingValues(18.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        SettingIcon(Icons.Rounded.Storage, palette.secondary)
+                        SettingIcon(Icons.Rounded.List, palette.secondary)
                         Spacer(Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text("Save to Downloads folder", style = MaterialTheme.typography.titleSmall.copy(color = VidmaBase.TextHigh))
@@ -157,12 +157,16 @@ fun SettingsScreen(
                 }
                 GlassCard(contentPadding = PaddingValues(18.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        SettingIcon(Icons.Rounded.FolderOpen, palette.warning)
+                        SettingIcon(Icons.Rounded.List, palette.warning)
                         Spacer(Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text("Download engine", style = MaterialTheme.typography.titleSmall.copy(color = VidmaBase.TextHigh))
                             Text(
-                                text = if (engineReady) "yt-dlp + FFmpeg ready" else "First-run setup in progress…",
+                                text = when {
+                                    !engineReady -> "First-run setup in progress…"
+                                    ffmpegReady -> "yt-dlp + FFmpeg ready"
+                                    else -> "yt-dlp ready · direct formats"
+                                },
                                 style = MaterialTheme.typography.bodySmall.copy(color = VidmaBase.TextLow),
                             )
                         }
@@ -185,7 +189,7 @@ fun SettingsScreen(
                     onClick = { if (library.isNotEmpty()) confirmClear = true },
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        SettingIcon(Icons.Rounded.DeleteSweep, palette.danger)
+                        SettingIcon(Icons.Rounded.Delete, palette.danger)
                         Spacer(Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text("Clear library", style = MaterialTheme.typography.titleSmall.copy(color = VidmaBase.TextHigh))
@@ -232,7 +236,7 @@ fun SettingsScreen(
                             ),
                         )
                         Text(
-                            text = "Version 1.0.0 · yt-dlp engine · FFmpeg",
+                            text = "Version 1.0.0 · yt-dlp engine · Chromium WebView",
                             style = MaterialTheme.typography.bodySmall.copy(color = VidmaBase.TextLow),
                         )
                         Spacer(Modifier.height(12.dp))

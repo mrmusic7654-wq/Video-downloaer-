@@ -1,17 +1,21 @@
 package com.vidma.downloader.features.browser
 
+import com.vidma.downloader.ui.components.core.VidmaIcons
+import androidx.compose.material.icons.rounded.LocationOn
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -21,32 +25,37 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
-import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.consume
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.activity.compose.BackHandler
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.vidma.downloader.domain.model.FabPosition
 import com.vidma.downloader.domain.model.MediaKind
 import com.vidma.downloader.features.downloader.DownloaderViewModel
 import com.vidma.downloader.ui.components.core.GlassCard
@@ -81,6 +90,7 @@ fun BrowserScreen(
     val currentUrl = browserVm.currentUrl
     val pageTitle = browserVm.pageTitle
     val addressText = browserVm.addressText
+    val savedFabPosition by browserVm.fabPosition.collectAsStateWithLifecycle()
 
     // System back walks the WebView history before leaving the app.
     BackHandler(enabled = currentUrl.isNotBlank() && browserVm.canGoBack) {
@@ -122,7 +132,7 @@ fun BrowserScreen(
                 onValueChange = { browserVm.addressText = it },
                 modifier = Modifier.weight(1f),
                 placeholder = "Search or paste a web address",
-                leadingIcon = if (isWebPageUrl(currentUrl)) Icons.Rounded.Lock else Icons.Rounded.Public,
+                leadingIcon = if (currentUrl.startsWith("https://")) Icons.Rounded.Lock else Icons.Rounded.LocationOn,
                 singleLine = true,
                 keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
                     imeAction = androidx.compose.ui.text.input.ImeAction.Go,
@@ -132,7 +142,7 @@ fun BrowserScreen(
                 ),
                 trailing = {
                     VidmaIconButton(
-                        icon = if (isLoading) Icons.Rounded.Stop else Icons.Rounded.Refresh,
+                        icon = if (isLoading) Icons.Rounded.Close else Icons.Rounded.Refresh,
                         contentDescription = if (isLoading) "Stop" else "Reload",
                         onClick = { if (isLoading) browserVm.stopLoading() else browserVm.reload() },
                         size = 34.dp,
@@ -156,7 +166,7 @@ fun BrowserScreen(
         Spacer(Modifier.height(8.dp))
 
         // ================= webview surface =================
-        Box(modifier = Modifier.fillMaxSize()) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             if (currentUrl.isBlank()) {
                 StartPage(
                     onOpen = { browserVm.onAddressSubmit(it) },
@@ -169,8 +179,23 @@ fun BrowserScreen(
                 )
             }
 
-            // floating "download this page" action
+            // The action is intentionally draggable rather than fixed to a
+            // corner. Long-press it, move it clear of a site's controls, and
+            // release; the normalised position is persisted in DataStore.
             if (isWebPageUrl(currentUrl) && currentUrl.isNotBlank()) {
+                val density = LocalDensity.current
+                val fabSizePx = with(density) { 62.dp.toPx() }
+                val maxX = (constraints.maxWidth.toFloat() - fabSizePx).coerceAtLeast(0f)
+                val maxY = (constraints.maxHeight.toFloat() - fabSizePx).coerceAtLeast(0f)
+                var fabOffset by remember(savedFabPosition, maxX, maxY) {
+                    mutableStateOf(
+                        IntOffset(
+                            x = (maxX * savedFabPosition.xFraction).toInt(),
+                            y = (maxY * savedFabPosition.yFraction).toInt(),
+                        ),
+                    )
+                }
+
                 DownloadPageFab(
                     onClick = {
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -184,8 +209,37 @@ fun BrowserScreen(
                         )
                     },
                     modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(end = 18.dp, bottom = 26.dp),
+                        .offset { fabOffset }
+                        .pointerInput(maxX, maxY) {
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                },
+                                onDrag = { change, amount ->
+                                    change.consume()
+                                    fabOffset = IntOffset(
+                                        x = (fabOffset.x + amount.x.toInt()).coerceIn(0, maxX.toInt()),
+                                        y = (fabOffset.y + amount.y.toInt()).coerceIn(0, maxY.toInt()),
+                                    )
+                                },
+                                onDragEnd = {
+                                    browserVm.saveFabPosition(
+                                        FabPosition(
+                                            xFraction = if (maxX == 0f) 0f else fabOffset.x / maxX,
+                                            yFraction = if (maxY == 0f) 0f else fabOffset.y / maxY,
+                                        ),
+                                    )
+                                },
+                                onDragCancel = {
+                                    browserVm.saveFabPosition(
+                                        FabPosition(
+                                            xFraction = if (maxX == 0f) 0f else fabOffset.x / maxX,
+                                            yFraction = if (maxY == 0f) 0f else fabOffset.y / maxY,
+                                        ),
+                                    )
+                                },
+                            )
+                        },
                     palette = palette,
                 )
             }
@@ -212,8 +266,8 @@ private fun DownloadPageFab(
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            imageVector = Icons.Rounded.Download,
-            contentDescription = "Download video from this page",
+            imageVector = VidmaIcons.Download,
+            contentDescription = "Download video from this page. Long press and drag to move.",
             tint = Color.White,
             modifier = Modifier.requiredSize(27.dp),
         )
@@ -239,7 +293,7 @@ private fun StartPage(onOpen: (String) -> Unit, palette: VidmaPalette = LocalVid
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                imageVector = Icons.Rounded.Public,
+                imageVector = Icons.Rounded.LocationOn,
                 contentDescription = null,
                 tint = Color.White,
                 modifier = Modifier.requiredSize(42.dp),
@@ -255,7 +309,7 @@ private fun StartPage(onOpen: (String) -> Unit, palette: VidmaPalette = LocalVid
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "Open any site — when you land on a video page, hit the glowing download button and yt-dlp takes over from the address itself.",
+            text = "Chromium is built into Android’s system WebView. Open any site, then hold and drag the glowing action wherever it feels right before tapping to send the page to the same download queue.",
             style = MaterialTheme.typography.bodyMedium.copy(color = VidmaBase.TextMid),
             textAlign = TextAlign.Center,
         )

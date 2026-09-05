@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -136,7 +135,7 @@ fun kindIcon(kind: MediaKind): ImageVector =
     if (kind == MediaKind.Video) {
         Icons.Rounded.PlayArrow
     } else {
-        Icons.Rounded.AudioFile
+        Icons.Rounded.PlayArrow
     }
 
 /** Small square tile for queue rows / chips. */

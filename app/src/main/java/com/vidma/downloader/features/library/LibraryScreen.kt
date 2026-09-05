@@ -1,5 +1,7 @@
 package com.vidma.downloader.features.library
 
+import androidx.compose.material.icons.rounded.List
+import androidx.compose.material.icons.rounded.Delete
 import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -23,9 +25,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -115,7 +115,7 @@ fun LibraryScreen(
             }
             if (items.isNotEmpty()) {
                 VidmaIconButton(
-                    icon = Icons.Rounded.DeleteSweep,
+                    icon = Icons.Rounded.Delete,
                     contentDescription = "Clear library",
                     onClick = { confirmClear = true },
                     tint = VidmaBase.TextMid,
@@ -174,7 +174,7 @@ fun LibraryScreen(
         when {
             items.isEmpty() -> {
                 EmptyState(
-                    icon = Icons.Rounded.VideoLibrary,
+                    icon = Icons.Rounded.List,
                     title = "Nothing here yet",
                     subtitle = "Paste a link on the Download tab and finished media lands in your library — thumbnails, sizes and all.",
                     modifier = Modifier.align(Alignment.CenterHorizontally),

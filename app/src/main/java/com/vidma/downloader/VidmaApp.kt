@@ -35,7 +35,8 @@ class AppContainer(private val appContext: Context) {
             // a leftover .part file must not be able to kill the process.
             runCatching { storage.cleanStaging() }
                 .onFailure { android.util.Log.w("VidmaApp", "staging cleanup failed", it) }
-            // Unpack yt-dlp + python + ffmpeg native assets (first run only).
+            // Warm the yt-dlp runtime before the first tap. FFmpeg is
+            // optional in the lean build and is detected by the engine.
             runCatching { YtDlpEngine.initialize(appContext) }
                 .onFailure { android.util.Log.e("VidmaEngine", "engine init failed", it) }
         }

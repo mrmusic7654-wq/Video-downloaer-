@@ -9,7 +9,7 @@ plugins {
 
 // ------------------------------------------------------------------
 //  vidma — single :app module with a strict package architecture:
-//  ui (theme/components/navigation) · features (downloader/library/
+//  ui (theme/components/navigation) · features (downloader/downloads/library/
 //  browser/settings) · domain (model/usecase/repository) · data
 //  (engine/repository/store) · util
 // ------------------------------------------------------------------
@@ -17,12 +17,15 @@ plugins {
 // ------------------------------------------------------------------
 //  APK SIZE STRATEGY
 //
-//  yt-dlp-android bundles a full python runtime (~40-50 MB) and ffmpeg
-//  (~18-25 MB) per ABI. Building all 3 ABIs + a universal APK therefore
-//  produced ~200 MB universal APKs (and a ~800 MB CI artifact).
+//  yt-dlp-android bundles a Python runtime. FFmpeg is kept optional because
+//  it is another large native payload and is not needed for single-file
+//  downloads. The default arm64 release is the lean/direct-format build;
+//  full merge + audio conversion stays available with:
+//    ./gradlew :app:assembleRelease -Pvidma.withFfmpeg=true
 //
-//  Defaults target ONE apk for the ABI of real devices (arm64-v8a):
-//    ./gradlew :app:assembleRelease                  → arm64-v8a only
+//  Defaults target ONE apk for real devices (arm64-v8a). Native libraries are
+//  compressed for download size and the extended Material icon bundle is not
+//  included.
 //
 //  Legacy/fat builds stay one flag away when truly needed:
 //    ./gradlew :app:assembleRelease \
@@ -37,6 +40,11 @@ val vidmaAbis: List<String> = (project.findProperty("vidma.abis") as String?)
 
 val vidmaUniversalApk: Boolean =
     (project.findProperty("vidma.universalApk") as String?)?.toBoolean() == true
+
+// Keep the default artifact small. The Kotlin engine detects this optional
+// module through reflection, so the same source supports both variants.
+val vidmaWithFfmpeg: Boolean =
+    (project.findProperty("vidma.withFfmpeg") as String?)?.toBoolean() == true
 
 android {
     namespace = "com.vidma.downloader"
@@ -92,6 +100,14 @@ android {
         }
     }
 
+    // App bundles can independently split ABI, density and language payloads.
+    // This does not change the APK command above, but keeps Play delivery lean.
+    bundle {
+        abi.enableSplit = true
+        density.enableSplit = true
+        language.enableSplit = true
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -105,6 +121,12 @@ android {
     }
 
     packaging {
+        // Compress native payloads in the distributable APK. Android extracts
+        // them at install time; this reduces the download without changing
+        // runtime behaviour.
+        jniLibs {
+            useLegacyPackaging = true
+        }
         resources {
             excludes += setOf(
                 "META-INF/AL2.0",
@@ -155,7 +177,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
-    implementation(libs.androidx.compose.material.icons.extended)
+    implementation(libs.androidx.compose.material.icons.core)
     implementation(libs.androidx.compose.foundation)
     debugImplementation(libs.androidx.compose.ui.tooling)
 
@@ -169,9 +191,12 @@ dependencies {
     // --- Images ---
     implementation(libs.coil.compose)
 
-    // --- yt-dlp engine (bundles python + yt-dlp; ffmpeg enables merge/audio) ---
+    // --- yt-dlp engine (bundles python + yt-dlp) ---
     implementation(libs.youtubedl.android.library)
-    implementation(libs.youtubedl.android.ffmpeg)
+    if (vidmaWithFfmpeg) {
+        // Optional full build: enables stream merging and audio conversion.
+        implementation(libs.youtubedl.android.ffmpeg)
+    }
 
     // --- Async / storage / serialization ---
     implementation(libs.kotlinx.coroutines.android)

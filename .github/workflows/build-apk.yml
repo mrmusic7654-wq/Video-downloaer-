@@ -5,9 +5,9 @@ name: Build vidma APK
 #
 # Default output is lean: a single arm64-v8a release APK (and one debug
 # APK for testing). The old pipeline built debug+release for 3 ABIs plus
-# universal APKs — ~800 MB of artifacts per run. The bundled yt-dlp
-# python/ffmpeg runtime is triplicated per ABI, so a "fat" build (all
-# ABIs + universal) stays available via workflow_dispatch only.
+# universal APKs — a large artifact per run. The bundled yt-dlp/Python
+# runtime (and optional FFmpeg when requested) is triplicated per ABI, so a
+# "fat" build (all ABIs + universal) stays available via workflow_dispatch only.
 
 on:
   push:
@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       allAbis:
-        description: "Also build all ABIs + universal APK (large, ~800 MB)"
+        description: "Also build all ABIs + universal APK (large)"
         required: true
         default: false
         type: boolean

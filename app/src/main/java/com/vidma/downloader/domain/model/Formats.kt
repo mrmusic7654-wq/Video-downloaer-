@@ -46,6 +46,21 @@ object FormatRules {
             "bestvideo[height<=$height]+bestaudio/best[height<=$height]/best"
         }
 
+    /**
+     * A single-file selector for the lean build. It avoids asking yt-dlp to
+     * merge separate video/audio streams when FFmpeg was intentionally left
+     * out of the APK.
+     */
+    fun singleStreamVideoSelector(height: Int?): String =
+        if (height == null) {
+            "best[ext=mp4]/best"
+        } else {
+            "best[height<=$height][ext=mp4]/best[height<=$height]/best"
+        }
+
+    /** Source audio selector used when no post-processor is available. */
+    const val sourceAudioSelector: String = "bestaudio[ext=m4a]/bestaudio/best"
+
     /** Short human label stored on the task, e.g. "1080p · mp4" / "MP3 audio". */
     fun requestLabel(
         kind: MediaKind,

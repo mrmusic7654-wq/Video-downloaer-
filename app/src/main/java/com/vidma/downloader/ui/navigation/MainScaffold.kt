@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -26,9 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,9 +45,9 @@ import com.vidma.downloader.features.browser.BrowserScreen
 import com.vidma.downloader.features.browser.BrowserViewModel
 import com.vidma.downloader.features.downloader.DownloaderScreen
 import com.vidma.downloader.features.downloader.DownloaderViewModel
+import com.vidma.downloader.features.downloads.DownloadProgressScreen
 import com.vidma.downloader.features.library.LibraryScreen
 import com.vidma.downloader.features.settings.SettingsScreen
-import com.vidma.downloader.ui.components.media.TaskQueueSheet
 import com.vidma.downloader.ui.theme.LocalVidmaPalette
 import com.vidma.downloader.ui.theme.VidmaBase
 
@@ -66,7 +63,6 @@ fun MainScaffold(
     val palette = LocalVidmaPalette.current
     val tasks by downloaderVm.downloads.collectAsStateWithLifecycle()
     val active = remember(tasks) { tasks.filter { it.isActive } }
-    var queueOpen by remember { mutableStateOf(false) }
 
     val backStack by navController.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
@@ -84,14 +80,14 @@ fun MainScaffold(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 AnimatedVisibility(
-                    visible = active.isNotEmpty() && !queueOpen,
+                    visible = active.isNotEmpty() && route != "downloads",
                     enter = fadeIn() + scaleIn(initialScale = 0.92f),
                     exit = fadeOut() + scaleOut(targetScale = 0.95f),
                 ) {
                     Column {
                         ActiveDownloadPill(
                             task = active.first(),
-                            onClick = { queueOpen = true },
+                            onClick = { navController.navigate("downloads") { launchSingleTop = true } },
                             palette = palette,
                         )
                         Spacer(Modifier.height(10.dp))
@@ -100,8 +96,10 @@ fun MainScaffold(
                 VidmaDock(
                     selected = selectedTab ?: VidmaTab.Home,
                     onSelect = { tab ->
-                        if (route == "settings") navController.popBackStack()
-                        navController.navigateTo(tab)
+                        if (tab.route != route) {
+                            if (route == "settings" || route == "downloads") navController.popBackStack()
+                            navController.navigateTo(tab)
+                        }
                     },
                     activeDownloads = active.size,
                     palette = palette,
@@ -120,6 +118,7 @@ fun MainScaffold(
                         vm = downloaderVm,
                         onOpenLibrary = { navController.navigateTo(VidmaTab.Library) },
                         onOpenBrowser = { navController.navigateTo(VidmaTab.Browser) },
+                        onOpenDownloads = { navController.navigate("downloads") { launchSingleTop = true } },
                         onOpenSettings = {
                             navController.navigate("settings") { launchSingleTop = true }
                         },
@@ -131,6 +130,12 @@ fun MainScaffold(
                 composable(VidmaTab.Browser.route) {
                     BrowserScreen(browserVm = browserVm, downloaderVm = downloaderVm)
                 }
+                composable("downloads") {
+                    DownloadProgressScreen(
+                        vm = downloaderVm,
+                        onBack = { navController.popBackStack() },
+                    )
+                }
                 composable("settings") {
                     SettingsScreen(vm = downloaderVm, onBack = { navController.popBackStack() })
                 }
@@ -139,19 +144,6 @@ fun MainScaffold(
             // global toast overlay
             VidmaToast(viewModel = downloaderVm, modifier = Modifier.align(Alignment.TopCenter))
         }
-    }
-
-    if (queueOpen) {
-        TaskQueueSheet(
-            tasks = active,
-            onDismiss = { queueOpen = false },
-            onCancel = downloaderVm::cancelTask,
-            onRetry = downloaderVm::retryTask,
-            onDismissTask = { id ->
-                downloaderVm.removeTask(id)
-                if (active.size <= 1) queueOpen = false
-            },
-        )
     }
 }
 
