@@ -18,7 +18,19 @@ enum class AccentPreset(
     val secondary: Color,
     val tertiary: Color,
 ) {
-    /** Default — premium black · purple · white, dreamy glow. */
+    /**
+     * Default — premium near-black ink with a shiny silver accent. The
+     * secondary is a soft platinum white, the tertiary is a deeper gunmetal
+     * for the bottom of the brand gradient. Minimalist, professional, and
+     * easy on the eyes at night.
+     */
+    Platinum(
+        label = "Midnight Silver",
+        primary = Color(0xFFB7C2D0),     // shiny silver
+        secondary = Color(0xFFEAF1FB),   // platinum white
+        tertiary = Color(0xFF5B6577),    // gunmetal
+    ),
+    /** Premium black · purple · white, dreamy glow. */
     Dream(
         label = "Dream Violet",
         primary = Color(0xFF8B5CF6),   // vivid violet
@@ -48,18 +60,19 @@ enum class AccentPreset(
 /** Fixed semantic / neutral palette (independent of the accent). */
 object VidmaBase {
     // ink gradient — drawn top → bottom by LucidBackdrop.
-    // Near-black with a violet cast: premium, dreamy, not cold blue.
-    val InkTop = Color(0xFF0D0818)
-    val InkMid = Color(0xFF080512)
-    val InkBottom = Color(0xFF030209)
+    // Cool ink (slight blue cast) to feel premium + minimal. Everything
+    // that uses this is the *surface* — the accent provides the colour.
+    val InkTop = Color(0xFF0A0D14)
+    val InkMid = Color(0xFF06080E)
+    val InkBottom = Color(0xFF020307)
 
-    val TextHigh = Color(0xFFF6F3FF) // white with a violet whisper
-    val TextMid = Color(0xFFABA6CC)
-    val TextLow = Color(0xFF6E679A)
+    val TextHigh = Color(0xFFF1F4FA) // soft white
+    val TextMid = Color(0xFFA2AABE)
+    val TextLow = Color(0xFF6A7285)
 
-    val Success = Color(0xFF4AE3B0)
+    val Success = Color(0xFF65E0B6)
     val Warning = Color(0xFFFFC24D)
-    val Danger = Color(0xFFFF5D7A)
+    val Danger = Color(0xFFFF6E8A)
 
     val GlassFill = Color.White.copy(alpha = 0.055f)
     val GlassFillStrong = Color.White.copy(alpha = 0.09f)
@@ -68,7 +81,7 @@ object VidmaBase {
 
     val White = Color.White
     val Black = Color.Black
-    val Scrim = Color(0xCC030209)
+    val Scrim = Color(0xCC020307)
 }
 
 /** All colors the Material theme is built from. */

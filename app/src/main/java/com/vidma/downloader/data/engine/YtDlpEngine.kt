@@ -2,10 +2,13 @@ package com.vidma.downloader.data.engine
 
 import android.content.Context
 import com.vidma.downloader.domain.model.EngineStatus
+import com.vidma.downloader.domain.model.MediaFormat
+import com.vidma.downloader.domain.model.MediaKind
 import com.vidma.downloader.domain.model.MediaSummary
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
 import com.yausername.youtubedl_android.mapper.VideoInfo
+import com.yausername.youtubedl_android.mapper.VideoFormat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -176,11 +179,15 @@ object YtDlpEngine {
             )
         }
 
-        val heights = info.formats
-            ?.mapNotNull { format -> format.height.takeIf { it > 0 } }
-            ?.distinct()
-            ?.sortedDescending()
-            ?: emptyList()
+        val formats = buildFormats(info)
+        val heights = formats
+            .filter { it.height > 0 }
+            .map { it.height }
+            .distinct()
+            .sortedDescending()
+        val best = formats.firstOrNull { it.height > 0 && it.vcodec != "none" }
+            ?: formats.firstOrNull { it.height > 0 }
+            ?: formats.firstOrNull()
 
         return MediaSummary(
             url = cleanUrl,
@@ -192,11 +199,91 @@ object YtDlpEngine {
             thumbnailUrl = info.thumbnail,
             extractor = info.extractorKey ?: info.extractor,
             availableHeights = heights,
+            availableFormats = formats,
+            bestMergedFormat = best,
             // youtubedl-android has exposed these fields as both strings and
             // numbers across releases. Parsing Any keeps upgrades compatible.
             viewCount = parseCount(info.viewCount),
             likeCount = parseCount(info.likeCount),
         )
+    }
+
+    /**
+     * Translate the engine's raw format list into the UI's [MediaFormat]
+     * model. Filters out no-data storyboards, normalises codecs, and
+     * estimates size from bitrate when the file size itself is unknown.
+     */
+    private fun buildFormats(info: VideoInfo): List<MediaFormat> {
+        val raw: List<VideoFormat>? = info.formats
+        if (raw == null) return emptyList()
+        val result = mutableListOf<MediaFormat>()
+        val seen = HashSet<String>()
+        for (f in raw) {
+            val formatId = f.formatId?.takeIf { it.isNotBlank() } ?: continue
+            val ext = f.ext?.takeIf { it.isNotBlank() } ?: continue
+            // Skip storyboards, "none" rows and obviously useless payloads.
+            val vcodec = f.vcodec?.takeIf { it.isNotBlank() && it != "none" }
+            val acodec = f.acodec?.takeIf { it.isNotBlank() && it != "none" }
+            if (vcodec == null && acodec == null) continue
+            val kind = if (vcodec == null) MediaKind.Audio else MediaKind.Video
+            val height = f.height
+            val fps = f.fps
+            // Skip progressive duplicates we already represented as a merged
+            // (video+audio) row.
+            val dedupeKey = "$height|$fps|${vcodec ?: "-"}|${acodec ?: "-"}|$ext"
+            if (!seen.add(dedupeKey)) continue
+            val isProgressive = vcodec != null && acodec != null
+            val mediaType = when {
+                kind == MediaKind.Audio -> "audio"
+                isProgressive -> "video+audio"
+                else -> "video"
+            }
+            val label = buildString {
+                if (kind == MediaKind.Audio) {
+                    append("Audio")
+                } else {
+                    if (height > 0) {
+                        append("${height}p")
+                        if (fps > 0) append(fps)
+                    } else {
+                        append("Video")
+                    }
+                }
+                append(" · ").append(ext)
+            }
+            val sizeBytes = parseFileSize(f.fileSize, f.tbr, info.duration)
+            result += MediaFormat(
+                id = formatId,
+                label = label,
+                kind = kind,
+                height = height,
+                fps = fps,
+                vcodec = vcodec,
+                acodec = acodec,
+                ext = ext,
+                sizeBytes = sizeBytes,
+                mediaType = mediaType,
+            )
+        }
+        // Sort: video with height first (desc), audio at the end, ties by size.
+        return result.sortedWith(
+            compareByDescending<MediaFormat> { it.height }
+                .thenByDescending { it.fps }
+                .thenBy { it.mediaType == "audio" }
+                .thenBy { it.ext },
+        )
+    }
+
+    private fun parseFileSize(
+        rawSize: Long,
+        rawBitrate: Int,
+        durationSec: Int,
+    ): Long {
+        if (rawSize > 0L) return rawSize
+        // Estimate: bitrate (kbps) * duration (s) / 8 = bytes.
+        val kbps = rawBitrate.toDouble()
+        if (kbps <= 0.0 || durationSec <= 0) return 0L
+        return (kbps * 1000.0 / 8.0 * durationSec).toLong()
     }
 
     /**
@@ -233,10 +320,9 @@ object YtDlpEngine {
         return out.substring(start)
     }
 
-    private fun parseCount(value: Any?): Long? = when (value) {
-        is Number -> value.toLong()
-        is String -> value.replace(",", "").trim().toLongOrNull()
-        else -> null
+    private fun parseCount(value: String?): Long? {
+        if (value.isNullOrBlank()) return null
+        return value.replace(",", "").trim().toLongOrNull()
     }
 
     /**
@@ -263,6 +349,8 @@ object YtDlpEngine {
             addOption("--no-mtime")
             addOption("--newline")
             addOption("--progress")
+            addOption("--buffer-size", "64K")
+            addOption("--http-chunk-size", "1M")
             addOption("--continue")
             addOption("--part")
             addOption("--no-overwrites")

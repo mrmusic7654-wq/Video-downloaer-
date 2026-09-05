@@ -79,11 +79,12 @@ private val QuickSites = listOf(
     "Facebook" to "https://www.facebook.com",
 )
 
-/** BROWSER — native WebView tab with a one-tap "download this page" flow. */
+/** BROWSER — full-screen in-app WebView opened from the home search bar. */
 @Composable
 fun BrowserScreen(
     browserVm: BrowserViewModel,
     downloaderVm: DownloaderViewModel,
+    onClose: (() -> Unit)? = null,
     palette: VidmaPalette = LocalVidmaPalette.current,
 ) {
     val haptics = LocalHapticFeedback.current
@@ -100,13 +101,14 @@ fun BrowserScreen(
     /** Non-null while the "Save this media" sheet is up. */
     var captureSpec by remember { mutableStateOf<CaptureSheetSpec?>(null) }
 
-    // System back walks the WebView history before leaving the app.
-    BackHandler(enabled = currentUrl.isNotBlank() && browserVm.canGoBack) {
-        browserVm.goBack()
-    }
-    // …but when the capture sheet is open, back closes the sheet first.
-    BackHandler(enabled = captureSpec != null) {
-        captureSpec = null
+    // System back walks the WebView history; once the history runs out,
+    // the next press closes the browser.
+    BackHandler {
+        when {
+            captureSpec != null -> captureSpec = null
+            browserVm.canGoBack -> browserVm.goBack()
+            onClose != null -> onClose()
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -163,6 +165,15 @@ fun BrowserScreen(
                     )
                 },
             )
+            if (onClose != null) {
+                Spacer(Modifier.width(8.dp))
+                VidmaIconButton(
+                    icon = Icons.Rounded.Close,
+                    contentDescription = "Close browser",
+                    onClick = onClose,
+                    size = 40.dp,
+                )
+            }
         }
 
         // page progress

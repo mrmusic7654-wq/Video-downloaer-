@@ -2,6 +2,8 @@ package com.vidma.downloader.ui.components.media
 
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -18,7 +20,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -39,28 +40,69 @@ import com.vidma.downloader.ui.components.core.StatusPill
 import com.vidma.downloader.ui.theme.LocalVidmaPalette
 import com.vidma.downloader.ui.theme.VidmaBase
 import com.vidma.downloader.ui.theme.VidmaPalette
+import com.vidma.downloader.util.formatBytes
 import com.vidma.downloader.util.formatDuration
 import com.vidma.downloader.util.hostOf
 
-/** A single row in the queue / tasks list. */
+/**
+ * A single row in the queue / tasks list.
+ *
+ * Visual contract:
+ *  * Resolving → a soft glowing dot (the row is alive but the engine hasn't
+ *    emitted a percent yet, so we don't show a fake 0% ring),
+ *  * Downloading / Processing / Finishing → the gradient progress arc with
+ *    the live percent in the middle,
+ *  * Completed / Failed / Cancelled → the action row (play, retry, dismiss).
+ */
 @Composable
 fun TaskRow(
     task: DownloadTask,
     onCancel: (String) -> Unit,
+    onPause: ((String) -> Unit)? = null,
+    onResume: ((String) -> Unit)? = null,
     onRetry: (String) -> Unit,
     onDismiss: (String) -> Unit,
     onPlay: ((DownloadTask) -> Unit)? = null,
+    selected: Boolean = false,
+    onSelectToggle: ((DownloadTask) -> Unit)? = null,
     modifier: Modifier = Modifier,
     palette: VidmaPalette = LocalVidmaPalette.current,
 ) {
-    GlassCard(modifier = modifier.fillMaxWidth()) {
+    GlassCard(
+        modifier = modifier.fillMaxWidth(),
+        borderVisible = selected,
+    ) {
         Row(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // ---- selection circle (shown in batch mode) ----
+            if (onSelectToggle != null) {
+                Box(
+                    modifier = Modifier
+                        .requiredSize(22.dp)
+                        .background(
+                            if (selected) palette.primary.copy(alpha = 0.4f) else Color.White.copy(alpha = 0.05f),
+                            CircleShape,
+                        )
+                        .clickable { onSelectToggle(task) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (selected) {
+                        Icon(
+                            imageVector = Icons.Rounded.PlayArrow,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.requiredSize(14.dp),
+                        )
+                    }
+                }
+                Spacer(Modifier.width(10.dp))
+            }
+
             // ---- leading visual ----
             when (task.state) {
-                DownloadState.Queued, DownloadState.Resolving -> {
+                DownloadState.Resolving -> {
                     Box(
                         modifier = Modifier
                             .requiredSize(52.dp)
@@ -144,19 +186,55 @@ fun TaskRow(
                 )
                 when (task.state) {
                     DownloadState.Downloading -> {
+                        val speed = task.speedBytesPerSec.takeIf { it > 0 }
                         val eta = task.etaSeconds.takeIf { it > 0 }
-                        if (eta != null || task.statusLine.isNotBlank()) {
+                        val sub = buildString {
+                            if (speed != null) {
+                                append(formatBytes(speed))
+                                append("/s")
+                            }
+                            if (eta != null) {
+                                if (isNotEmpty()) append("  ·  ")
+                                append("ETA ").append(formatDuration(eta.toInt()))
+                            }
+                            if (task.totalBytes > 0 && task.bytesDownloaded > 0) {
+                                if (isNotEmpty()) append("  ·  ")
+                                append(formatBytes(task.bytesDownloaded))
+                                    .append(" / ")
+                                    .append(formatBytes(task.totalBytes))
+                            }
+                            if (task.statusLine.isNotBlank() && isEmpty()) {
+                                append(task.statusLine.take(96))
+                            }
+                        }
+                        if (sub.isNotEmpty()) {
                             Spacer(Modifier.height(4.dp))
                             Text(
-                                text = buildString {
-                                    eta?.let { append("ETA ${formatDuration(it.toInt())}  ") }
-                                    append(task.statusLine.take(96))
-                                },
+                                text = sub,
                                 style = MaterialTheme.typography.labelSmall.copy(color = VidmaBase.TextMid),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
+                    }
+                    DownloadState.Processing -> {
+                        val sub = task.statusLine.ifBlank { "Post-processing with FFmpeg…" }
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = sub.take(96),
+                            style = MaterialTheme.typography.labelSmall.copy(color = VidmaBase.TextMid),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    DownloadState.Finishing -> {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = task.statusLine.ifBlank { "Finalising…" }.take(96),
+                            style = MaterialTheme.typography.labelSmall.copy(color = VidmaBase.TextMid),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
                     DownloadState.Failed -> {
                         Spacer(Modifier.height(3.dp))
@@ -169,17 +247,11 @@ fun TaskRow(
                     }
                     DownloadState.Completed -> Unit
                     else -> {
-                        // Queued/Resolving must never look frozen: always show
-                        // what the task is doing, even before the engine
-                        // emitted its first line.
-                        val phaseText = when (task.state) {
-                            DownloadState.Queued -> task.statusLine.ifBlank {
-                                "Queued — waiting for a free engine slot…"
-                            }
-                            DownloadState.Resolving -> task.statusLine.ifBlank {
-                                "Resolving link with the engine…"
-                            }
-                            else -> task.statusLine
+                        // Resolving — never look frozen: always show what the
+                        // task is doing, even before the engine emitted a
+                        // first line.
+                        val phaseText = task.statusLine.ifBlank {
+                            "Resolving link with the engine…"
                         }
                         if (phaseText.isNotBlank()) {
                             Spacer(Modifier.height(4.dp))
@@ -198,13 +270,26 @@ fun TaskRow(
 
             // ---- trailing actions ----
             when {
-                task.isActive -> TrailingAction(onClick = { onCancel(task.id) }, icon = Icons.Rounded.Close, tint = palette.danger)
+                task.isActive -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (onPause != null) {
+                        TrailingAction(onClick = { onPause(task.id) }, icon = Icons.Rounded.Pause, tint = palette.secondary)
+                    }
+                    TrailingAction(onClick = { onCancel(task.id) }, icon = Icons.Rounded.Close, tint = palette.danger)
+                }
                 task.state == DownloadState.Failed -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    TrailingAction(onClick = { onRetry(task.id) }, icon = Icons.Rounded.Refresh, tint = palette.secondary)
+                    if (onResume != null) {
+                        TrailingAction(onClick = { onResume(task.id) }, icon = Icons.Rounded.Refresh, tint = palette.secondary)
+                    } else {
+                        TrailingAction(onClick = { onRetry(task.id) }, icon = Icons.Rounded.Refresh, tint = palette.secondary)
+                    }
                     TrailingAction(onClick = { onDismiss(task.id) }, icon = Icons.Rounded.Close, tint = VidmaBase.TextLow)
                 }
                 task.state == DownloadState.Cancelled -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    TrailingAction(onClick = { onRetry(task.id) }, icon = Icons.Rounded.Refresh, tint = VidmaBase.TextMid)
+                    if (onResume != null) {
+                        TrailingAction(onClick = { onResume(task.id) }, icon = Icons.Rounded.Refresh, tint = VidmaBase.TextMid)
+                    } else {
+                        TrailingAction(onClick = { onRetry(task.id) }, icon = Icons.Rounded.Refresh, tint = VidmaBase.TextMid)
+                    }
                     TrailingAction(onClick = { onDismiss(task.id) }, icon = Icons.Rounded.Close, tint = VidmaBase.TextLow)
                 }
                 task.state == DownloadState.Completed -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -235,7 +320,6 @@ private fun TrailingAction(onClick: () -> Unit, icon: androidx.compose.ui.graphi
 @Composable
 fun TaskStatusChip(task: DownloadTask, palette: VidmaPalette = LocalVidmaPalette.current) {
     val triple: Triple<String, Color, Boolean> = when (task.state) {
-        DownloadState.Queued -> Triple("Queued", palette.textLow, false)
         DownloadState.Resolving -> Triple("Resolving", palette.secondary, true)
         DownloadState.Downloading -> Triple("${task.percentText()} downloaded", palette.primary, true)
         DownloadState.Processing -> Triple("Processing", palette.tertiary, true)

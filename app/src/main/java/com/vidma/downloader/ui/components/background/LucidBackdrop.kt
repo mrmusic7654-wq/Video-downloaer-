@@ -228,14 +228,24 @@ private data class StarSpec(
 
 private fun buildOrbSpecs(palette: VidmaPalette): List<OrbSpec> {
     val (a, b, c) = palette.orbGradient
+    // The platinum accent deliberately keeps orb alpha lower than the
+    // violet presets — minimalism over show. Other accents keep the full
+    // dreamy-glow treatment.
+    val isMinimalist = palette.accent == AccentPreset.Platinum
+    val alpha = if (isMinimalist) 0.30f else 0.46f
+    val alpha2 = if (isMinimalist) 0.24f else 0.40f
+    val alpha3 = if (isMinimalist) 0.18f else 0.30f
+    val alpha4 = if (isMinimalist) 0.16f else 0.24f
+    val alpha5 = if (isMinimalist) 0.12f else 0.18f
+    val alpha6 = if (isMinimalist) 0.18f else 0.22f
     return listOf(
-        OrbSpec(0.16f, 0.06f, 340f, a, 0.46f, 0.10f, 1.0f, 0.4f),
-        OrbSpec(0.88f, 0.18f, 300f, b, 0.40f, 0.14f, 0.8f, 2.1f),
-        OrbSpec(0.74f, 0.72f, 380f, c, 0.30f, 0.12f, 0.7f, 4.2f),
-        OrbSpec(0.10f, 0.85f, 260f, a.copy(alpha = 1f), 0.24f, 0.16f, 1.2f, 1.1f),
-        OrbSpec(0.5f, 0.38f, 190f, b.copy(alpha = 1f), 0.18f, 0.20f, 0.9f, 5.3f),
-        // a low lavender haze that pools at the bottom of the scene
-        OrbSpec(0.5f, 1.02f, 420f, b, 0.22f, 0.18f, 0.6f, 3.0f),
+        OrbSpec(0.16f, 0.06f, 340f, a, alpha, 0.10f, 1.0f, 0.4f),
+        OrbSpec(0.88f, 0.18f, 300f, b, alpha2, 0.14f, 0.8f, 2.1f),
+        OrbSpec(0.74f, 0.72f, 380f, c, alpha3, 0.12f, 0.7f, 4.2f),
+        OrbSpec(0.10f, 0.85f, 260f, a.copy(alpha = 1f), alpha4, 0.16f, 1.2f, 1.1f),
+        OrbSpec(0.5f, 0.38f, 190f, b.copy(alpha = 1f), alpha5, 0.20f, 0.9f, 5.3f),
+        // a low haze that pools at the bottom of the scene
+        OrbSpec(0.5f, 1.02f, 420f, b, alpha6, 0.18f, 0.6f, 3.0f),
     )
 }
 

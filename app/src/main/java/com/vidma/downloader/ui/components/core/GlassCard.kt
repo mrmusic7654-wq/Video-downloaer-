@@ -17,6 +17,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.vidma.downloader.ui.theme.VidmaBase
@@ -36,21 +37,24 @@ fun GlassCard(
     elevation: Dp = 0.dp,
     glowing: Boolean = false,
     borderVisible: Boolean = true,
+    enabled: Boolean = true,
     contentPadding: PaddingValues = PaddingValues(0.dp),
     onClick: (() -> Unit)? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
-    val clickModifier = if (onClick != null) {
+    val clickModifier = if (onClick != null && enabled) {
         Modifier.clickable(
             interactionSource = interaction,
             indication = null,
             onClick = onClick,
         )
     } else Modifier
+    val effectiveAlpha = if (enabled || onClick == null) 1f else 0.55f
 
     Box(
         modifier = modifier
+            .graphicsLayer { this.alpha = effectiveAlpha }
             .then(
                 if (elevation > 0.dp) {
                     Modifier.shadow(

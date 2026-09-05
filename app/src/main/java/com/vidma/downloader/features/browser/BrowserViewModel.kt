@@ -135,6 +135,15 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         load(url)
     }
 
+    /**
+     * Used by the home screen to open a URL or a search query in the
+     * in-app browser. Accepts the same input the address bar would
+     * accept: a normalised URL, a raw URL or a free-text query.
+     */
+    fun open(target: String) {
+        onAddressSubmit(target)
+    }
+
     fun load(url: String) {
         val wv = webView
         addressText = url

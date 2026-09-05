@@ -28,14 +28,19 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * Runs yt-dlp tasks (max [MAX_CONCURRENT] at once), tracks live state and
- * publishes finished media into the library. Owns its IO coroutine scope for
- * the lifetime of the process.
+ * Runs yt-dlp tasks (up to [MAX_CONCURRENT] in parallel), tracks live state
+ * and publishes finished media into the library. Owns its IO coroutine
+ * scope for the lifetime of the process.
  *
  * Two guards make sure a task can never sit "not progressing" forever:
  *  * a per-task **stall watchdog** kills the engine process when no data
  *    flows for a while (resolving or downloading), and
  *  * the engine's own hard time caps (see [YtDlpEngine]).
+ *
+ * The "multi-file system at once" feature is implemented here: extra
+ * downloads are accepted immediately, surfaced as `Resolving` in the UI
+ * (no more "Queued" placeholder) and start downloading as soon as a slot
+ * frees up.
  */
 class DownloadCoordinator(
     private val appContext: Context,
@@ -65,6 +70,12 @@ class DownloadCoordinator(
         val durationSec: Int,
         val toPublic: Boolean,
         val directSource: Boolean = false,
+        val formatId: String? = null,
+        val formatHeight: Int = 0,
+        val formatFps: Int = 0,
+        val formatVcodec: String? = null,
+        val formatAcodec: String? = null,
+        val formatExt: String? = null,
     )
 
     // Touched from main (start/cancel/retry/remove) and IO (task completion),
@@ -72,6 +83,8 @@ class DownloadCoordinator(
     private val params = ConcurrentHashMap<String, StartParams>()
     private val activeJobs = ConcurrentHashMap<String, Job>()
     private val cancelled = ConcurrentHashMap.newKeySet<String>()
+    /** Tasks the user explicitly paused — engine was killed, params retained. */
+    private val paused = ConcurrentHashMap.newKeySet<String>()
 
     /** Last time a task emitted any engine line (stall detection). */
     private val activityStamps = ConcurrentHashMap<String, AtomicLong>()
@@ -90,6 +103,12 @@ class DownloadCoordinator(
         durationSec: Int,
         toPublic: Boolean,
         directSource: Boolean = false,
+        formatId: String? = null,
+        formatHeight: Int = 0,
+        formatFps: Int = 0,
+        formatVcodec: String? = null,
+        formatAcodec: String? = null,
+        formatExt: String? = null,
     ): String {
         val id = UUID.randomUUID().toString()
         val p = StartParams(
@@ -97,6 +116,8 @@ class DownloadCoordinator(
             containerExt = containerExt, requestLabel = requestLabel, title = title,
             coverUrl = coverUrl, durationSec = durationSec, toPublic = toPublic,
             directSource = directSource,
+            formatId = formatId, formatHeight = formatHeight, formatFps = formatFps,
+            formatVcodec = formatVcodec, formatAcodec = formatAcodec, formatExt = formatExt,
         )
         params[id] = p
         activityStamps[id] = AtomicLong(System.currentTimeMillis())
@@ -107,16 +128,26 @@ class DownloadCoordinator(
                 title = title,
                 kind = kind,
                 requestLabel = requestLabel,
-                state = DownloadState.Queued,
+                // Show progress *immediately*. Even if all slots are busy the
+                // row is added to the queue with "Resolving…" — the user
+                // never sees an inert "Queued" placeholder again.
+                state = DownloadState.Resolving,
                 coverUrl = coverUrl,
                 startedAtMs = System.currentTimeMillis(),
+                statusLine = "Resolving link with the engine…",
             ))
         }
         val job = scope.launch {
+            // Non-blocking acquire so multiple files can be in flight at once
+            // and the UI shows them progressing in parallel.
             slots.acquire()
             try {
                 if (id in cancelled) {
                     update(id) { copy(state = DownloadState.Cancelled, progress = 0f) }
+                    return@launch
+                }
+                if (id in paused) {
+                    update(id) { copy(state = DownloadState.Cancelled, progress = 0f, statusLine = "Paused") }
                     return@launch
                 }
                 runTask(id, p)
@@ -131,22 +162,76 @@ class DownloadCoordinator(
 
     fun cancel(id: String) {
         cancelled.add(id)
+        paused.remove(id)
         YtDlpEngine.cancel(id)
         DirectHttpEngine.cancel(id)
-        val task = tasksMap.value[id]
-        if (task != null && task.state == DownloadState.Queued) {
-            update(id) { copy(state = DownloadState.Cancelled, progress = 0f, statusLine = "Cancelled") }
+        update(id) { copy(state = DownloadState.Cancelled, progress = 0f, statusLine = "Cancelled") }
+    }
+
+    /**
+     * Pause a currently-running task. Kills the engine, marks the task as
+     * cancelled-in-place (UI shows it greyed out) and remembers the
+     * original params so [resume] can re-queue it.
+     */
+    fun pause(id: String) {
+        if (params[id] == null) return
+        paused.add(id)
+        cancelled.add(id)
+        YtDlpEngine.cancel(id)
+        DirectHttpEngine.cancel(id)
+        update(id) { copy(state = DownloadState.Cancelled, progress = 0f, statusLine = "Paused") }
+    }
+
+    /** Re-queue a paused task with the same parameters. */
+    fun resume(id: String) {
+        val p = params[id] ?: return
+        paused.remove(id)
+        cancelled.remove(id)
+        // Wipe any partial output the killed process left behind so the
+        // resumed run starts clean.
+        runCatching {
+            File(storage.stagingDir(), id).deleteRecursively()
         }
+        // Mark the existing task as resolving again, then spin a fresh job.
+        update(id) {
+            copy(
+                state = DownloadState.Resolving,
+                progress = 0f,
+                statusLine = "Resuming…",
+            )
+        }
+        val job = scope.launch {
+            slots.acquire()
+            try {
+                if (id in cancelled) {
+                    update(id) { copy(state = DownloadState.Cancelled, progress = 0f) }
+                    return@launch
+                }
+                if (id in paused) {
+                    update(id) { copy(state = DownloadState.Cancelled, progress = 0f, statusLine = "Paused") }
+                    return@launch
+                }
+                runTask(id, p)
+            } finally {
+                slots.release()
+                activeJobs.remove(id)
+            }
+        }
+        activeJobs[id] = job
     }
 
     fun retry(id: String) {
         val p = params[id] ?: return
+        paused.remove(id)
+        cancelled.remove(id)
         remove(id)
         start(
             url = p.url, kind = p.kind, selector = p.selector, audioFormat = p.audioFormat,
             containerExt = p.containerExt, requestLabel = p.requestLabel, title = p.title,
             coverUrl = p.coverUrl, durationSec = p.durationSec, toPublic = p.toPublic,
             directSource = p.directSource,
+            formatId = p.formatId, formatHeight = p.formatHeight, formatFps = p.formatFps,
+            formatVcodec = p.formatVcodec, formatAcodec = p.formatAcodec, formatExt = p.formatExt,
         )
     }
 
@@ -154,6 +239,7 @@ class DownloadCoordinator(
         params.remove(id)
         activityStamps.remove(id)
         stalledMessages.remove(id)
+        paused.remove(id)
         val job = activeJobs.remove(id)
         if (job?.isActive == true) {
             cancelled.add(id)
@@ -163,6 +249,30 @@ class DownloadCoordinator(
         }
         cancelled.remove(id)
         tasksMap.update { current -> current - id }
+    }
+
+    /** Cancel everything that is currently running — used by "Pause all". */
+    fun pauseAllActive() {
+        val snapshot = tasksMap.value
+        snapshot.values
+            .filter { it.isActive }
+            .forEach { cancel(it.id) }
+    }
+
+    /** Retry every task currently in Failed state. */
+    fun resumeAllFailed() {
+        val snapshot = tasksMap.value
+        snapshot.values
+            .filter { it.isFailed }
+            .forEach { retry(it.id) }
+    }
+
+    /** Remove every task in a terminal state (Completed/Failed/Cancelled). */
+    fun clearTerminal() {
+        val snapshot = tasksMap.value
+        snapshot.values
+            .filter { !it.isActive }
+            .forEach { remove(it.id) }
     }
 
     private suspend fun runTask(id: String, p: StartParams) {
@@ -347,6 +457,41 @@ class DownloadCoordinator(
     private fun configureRequest(request: YoutubeDLRequest, p: StartParams, template: String) {
         request.addOption("-o", template)
         val postProcess = YtDlpEngine.ffmpegReady.value
+
+        // A specific format was picked from the "Formats" sheet. We translate
+        // it into a precise -f selector so the engine downloads exactly the
+        // row the user tapped (no surprises when merging or fallbacks).
+        if (!p.formatId.isNullOrBlank()) {
+            val specific = p.formatId.trim()
+            when (p.kind) {
+                MediaKind.Video -> {
+                    val isProgressive = !p.formatAcodec.isNullOrBlank()
+                    if (postProcess && !isProgressive) {
+                        // Video-only row → merge with the best audio we can find.
+                        request.addOption("-f", "$specific+bestaudio/$specific")
+                        p.containerExt?.let { request.addOption("--merge-output-format", it) }
+                    } else {
+                        // Audio already muxed in, or no FFmpeg: take the row as-is.
+                        request.addOption("-f", specific)
+                    }
+                }
+                MediaKind.Audio -> {
+                    if (postProcess && !p.audioFormat.isNullOrBlank() &&
+                        p.audioFormat != p.formatExt
+                    ) {
+                        request.addOption("-f", specific)
+                        request.addOption("-x")
+                        request.addOption("--audio-format", p.audioFormat)
+                        request.addOption("--audio-quality", "0")
+                    } else {
+                        request.addOption("-f", specific)
+                    }
+                }
+            }
+            return
+        }
+
+        // Auto / quality-preset path (no specific format picked).
         when (p.kind) {
             MediaKind.Video -> {
                 // Separate bestvideo+bestaudio streams require FFmpeg. The
@@ -382,6 +527,9 @@ class DownloadCoordinator(
         activityStamps[id]?.set(System.currentTimeMillis())
         val current = tasksMap.value[id] ?: return
         val trimmed = line.trim().take(160)
+        // Always try to enrich the row with speed / total size from the raw
+        // yt-dlp output (e.g. "23.4% of 12.34MiB at 1.23MiB/s ETA 00:09").
+        val parsed = parseProgressLine(line)
         if (percent >= 0f && percent <= 100f) {
             val phase = if (percent >= 99.5f) DownloadState.Processing else DownloadState.Downloading
             update(id) {
@@ -390,6 +538,9 @@ class DownloadCoordinator(
                     progress = percent / 100f,
                     etaSeconds = eta,
                     statusLine = trimmed,
+                    speedBytesPerSec = parsed.speedBps,
+                    bytesDownloaded = parsed.bytesDone,
+                    totalBytes = parsed.bytesTotal,
                 )
             }
             return
@@ -401,8 +552,77 @@ class DownloadCoordinator(
                 lower.contains("fixup") -> DownloadState.Processing
             else -> current.state
         }
-        if (trimmed.isNotEmpty()) {
-            update(id) { copy(state = state, statusLine = trimmed) }
+        // Even without a percentage, update speed / totals so the row UI
+        // can show a live transfer rate as soon as the engine says anything.
+        if (trimmed.isNotEmpty() || parsed.speedBps > 0 || parsed.bytesDone > 0) {
+            update(id) {
+                copy(
+                    state = state,
+                    statusLine = trimmed.ifBlank { current.statusLine },
+                    speedBytesPerSec = parsed.speedBps,
+                    bytesDownloaded = parsed.bytesDone,
+                    totalBytes = parsed.bytesTotal,
+                )
+            }
+        }
+    }
+
+    private data class ProgressParse(
+        val percent: Float = -1f,
+        val bytesDone: Long = 0L,
+        val bytesTotal: Long = 0L,
+        val speedBps: Long = 0L,
+        val etaSec: Long = -1L,
+    )
+
+    /**
+     * Best-effort parse of a yt-dlp progress line. We only use it to enrich
+     * the row with real speed / total-size numbers — the *authoritative*
+     * percent / ETA still come from the library callback, so a partial parse
+     * failure is harmless.
+     */
+    private fun parseProgressLine(line: String): ProgressParse {
+        if (line.isBlank()) return ProgressParse()
+        val percentMatch = PERCENT_RE.find(line)
+        val totalMatch = OF_RE.find(line)
+        val speedMatch = AT_RE.find(line)
+        val etaMatch = ETA_RE.find(line)
+        val percent = percentMatch?.groupValues?.get(1)?.toFloatOrNull() ?: -1f
+        val total = totalMatch?.groupValues?.get(1)?.let { parseSize(it) } ?: 0L
+        val speed = speedMatch?.groupValues?.get(1)?.let { parseSize(it) } ?: 0L
+        val eta = etaMatch?.groupValues?.get(1)?.let { parseDuration(it) } ?: -1L
+        val done = if (percent > 0f && total > 0L) {
+            (total.toDouble() * percent / 100.0).toLong()
+        } else 0L
+        return ProgressParse(percent, done, total, speed, eta)
+    }
+
+    private fun parseSize(token: String): Long {
+        val num = token.substringBeforeLast(' ').toDoubleOrNull() ?: return 0L
+        val unit = token.substringAfterLast(' ').trim().lowercase()
+        val multiplier = when {
+            unit.startsWith("kib") || unit == "k" -> 1024.0
+            unit.startsWith("mib") || unit == "m" -> 1024.0 * 1024.0
+            unit.startsWith("gib") || unit == "g" -> 1024.0 * 1024.0 * 1024.0
+            unit.startsWith("tib") || unit == "t" -> 1024.0 * 1024.0 * 1024.0 * 1024.0
+            unit.startsWith("kb") -> 1000.0
+            unit.startsWith("mb") -> 1000.0 * 1000.0
+            unit.startsWith("gb") -> 1000.0 * 1000.0 * 1000.0
+            unit.startsWith("tb") -> 1000.0 * 1000.0 * 1000.0 * 1000.0
+            unit == "b" -> 1.0
+            else -> 1.0
+        }
+        return (num * multiplier).toLong()
+    }
+
+    private fun parseDuration(token: String): Long {
+        // Accept "HH:MM:SS" or "MM:SS".
+        val parts = token.split(':').map { it.trim().toIntOrNull() ?: 0 }
+        return when (parts.size) {
+            3 -> parts[0] * 3600L + parts[1] * 60L + parts[2]
+            2 -> parts[0] * 60L + parts[1]
+            1 -> parts[0].toLong()
+            else -> -1L
         }
     }
 
@@ -464,11 +684,24 @@ class DownloadCoordinator(
         .stateIn(scope, SharingStarted.Eagerly, 0)
 
     private companion object {
-        const val MAX_CONCURRENT = 2
+        /**
+         * Up to three downloads progress in parallel. The semaphore backs
+         * the "multi-file system at once" feature; any further download
+         * still appears in the UI instantly (as `Resolving`) and starts as
+         * soon as a slot frees up.
+         */
+        const val MAX_CONCURRENT = 3
         /** Resolving silence before we kill the extractor. */
         const val RESOLVE_STALL_MS = 100_000L
         /** Download silence (no bytes) before we kill the transfer. */
         const val DOWNLOAD_STALL_MS = 150_000L
         val COVER_EXTS = setOf("jpg", "jpeg", "png", "webp", "bmp")
+
+        // Used to enrich rows with real speed / total / percent numbers
+        // even when the library callback only delivered the raw line.
+        private val PERCENT_RE = Regex("([0-9]+(?:\\.[0-9]+)?)%")
+        private val OF_RE = Regex("of\\s+([0-9]+(?:\\.[0-9]+)?\\s*[KMGT]?i?B)", RegexOption.IGNORE_CASE)
+        private val AT_RE = Regex("at\\s+([0-9]+(?:\\.[0-9]+)?\\s*[KMGT]?i?B/s)", RegexOption.IGNORE_CASE)
+        private val ETA_RE = Regex("ETA\\s+([0-9:]+)")
     }
 }

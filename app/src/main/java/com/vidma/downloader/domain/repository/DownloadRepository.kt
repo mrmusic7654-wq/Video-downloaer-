@@ -35,6 +35,11 @@ interface DownloadRepository {
      * [directSource] marks [url] as a plain media file captured from a web
      * page: it skips the yt-dlp extractor entirely and streams straight
      * through OkHttp (works on any site, real progress).
+     *
+     * [formatId] / [formatHeight] / [formatFps] describe a specific stream
+     * picked from the "Formats" sheet; they translate into a precise
+     * yt-dlp -f selector so the engine downloads exactly the row the user
+     * tapped (no guessing, no merging surprises).
      */
     fun startDownload(
         url: String,
@@ -47,13 +52,34 @@ interface DownloadRepository {
         coverUrl: String? = null,
         durationSec: Int = 0,
         directSource: Boolean = false,
+        formatId: String? = null,
+        formatHeight: Int = 0,
+        formatFps: Int = 0,
+        formatVcodec: String? = null,
+        formatAcodec: String? = null,
+        formatExt: String? = null,
     ): String
 
     fun cancelTask(id: String)
 
     fun retryTask(id: String)
 
+    /** Pause a still-running task: cancellation with re-queue semantics. */
+    fun pauseTask(id: String)
+
+    /** Resume a paused task — re-issues the original engine request. */
+    fun resumeTask(id: String)
+
     fun removeTask(id: String)
+
+    /** Cancel every currently-running download. */
+    fun pauseAllActive()
+
+    /** Retry every task currently in Failed state. */
+    fun resumeAllFailed()
+
+    /** Remove every task in a terminal state (completed/failed/cancelled). */
+    fun clearTerminal()
 
     /** Delete from storage + library history. */
     suspend fun deleteLibraryItem(item: LibraryItem): Boolean

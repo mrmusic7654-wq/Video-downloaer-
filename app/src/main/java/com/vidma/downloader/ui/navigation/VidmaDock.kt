@@ -2,7 +2,6 @@ package com.vidma.downloader.ui.navigation
 
 import com.vidma.downloader.ui.components.core.VidmaIcons
 import androidx.compose.material.icons.rounded.DateRange
-import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.List
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -48,7 +47,8 @@ import com.vidma.downloader.ui.theme.LocalVidmaPalette
 import com.vidma.downloader.ui.theme.VidmaBase
 import com.vidma.downloader.ui.theme.VidmaPalette
 
-/** Bottom navigation model. */
+/** Bottom navigation model. The browser is opened from the home screen,
+ *  not pinned in the dock. */
 enum class VidmaTab(
     val route: String,
     val label: String,
@@ -57,12 +57,15 @@ enum class VidmaTab(
     Home("home", "Download", VidmaIcons.Download),
     Downloads("downloads", "Progress", Icons.Rounded.DateRange),
     Library("library", "Library", Icons.Rounded.List),
-    Browser("browser", "Browser", Icons.Rounded.LocationOn),
+    /** Full-screen browser route. Not in the dock — opened by the home
+     *  search bar (or via a shared link). */
+    Browser("browser", "Browser", Icons.Rounded.DateRange),
 }
 
 /**
- * VidmaDock — floating glass pill with capture, progress, library and
- * browser tabs plus an active-download badge.
+ * VidmaDock — floating glass pill with capture, progress and library tabs
+ * plus an active-download badge. The browser is opened from the home
+ * screen, not pinned here.
  */
 @Composable
 fun VidmaDock(
@@ -73,14 +76,15 @@ fun VidmaDock(
     palette: VidmaPalette = LocalVidmaPalette.current,
 ) {
     val shape = RoundedCornerShape(26.dp)
+    val visibleTabs = remember { VidmaTab.entries.filter { it != VidmaTab.Browser } }
     Row(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp)
-            .shadow(24.dp, shape, ambientColor = Color.Black.copy(alpha = 0.7f), spotColor = palette.primary.copy(alpha = 0.25f))
+            .shadow(24.dp, shape, ambientColor = Color.Black.copy(alpha = 0.7f), spotColor = palette.primary.copy(alpha = 0.18f))
             .background(
                 Brush.verticalGradient(
-                    listOf(Color(0xF71A1E38), Color(0xF70E1128)),
+                    listOf(Color(0xF50A0D16), Color(0xF506080E)),
                 ),
                 shape,
             )
@@ -88,9 +92,9 @@ fun VidmaDock(
                 width = 1.dp,
                 brush = Brush.linearGradient(
                     listOf(
-                        palette.primary.copy(alpha = 0.55f),
+                        palette.primary.copy(alpha = 0.45f),
                         VidmaBase.GlassStroke,
-                        palette.secondary.copy(alpha = 0.4f),
+                        palette.secondary.copy(alpha = 0.32f),
                     ),
                 ),
                 shape = shape,
@@ -98,7 +102,7 @@ fun VidmaDock(
             .padding(7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        VidmaTab.entries.forEach { tab ->
+        visibleTabs.forEach { tab ->
             DockItem(
                 tab = tab,
                 selected = tab == selected,
@@ -214,7 +218,12 @@ fun ActiveDownloadPill(
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Downloading…",
+                    text = when (task.state) {
+                        com.vidma.downloader.domain.model.DownloadState.Resolving -> "Resolving…"
+                        com.vidma.downloader.domain.model.DownloadState.Processing -> "Processing…"
+                        com.vidma.downloader.domain.model.DownloadState.Finishing -> "Finishing…"
+                        else -> "Downloading…"
+                    },
                     style = MaterialTheme.typography.labelMedium.copy(color = palette.secondary),
                 )
                 Text(
@@ -224,10 +233,18 @@ fun ActiveDownloadPill(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Text(
-                text = task.percentText(),
-                style = MaterialTheme.typography.labelMedium.copy(color = VidmaBase.TextHigh),
-            )
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = task.percentText(),
+                    style = MaterialTheme.typography.labelMedium.copy(color = VidmaBase.TextHigh),
+                )
+                if (task.speedBytesPerSec > 0) {
+                    Text(
+                        text = "${com.vidma.downloader.util.formatBytes(task.speedBytesPerSec)}/s",
+                        style = MaterialTheme.typography.labelSmall.copy(color = VidmaBase.TextLow),
+                    )
+                }
+            }
         }
     }
 }
