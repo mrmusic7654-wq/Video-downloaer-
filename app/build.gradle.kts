@@ -193,6 +193,10 @@ dependencies {
 
     // --- yt-dlp engine (bundles python + yt-dlp) ---
     implementation(libs.youtubedl.android.library)
+    // Compile-visible Jackson: the engine parses --dump-json through
+    // YoutubeDL.objectMapper, but the library only ships it as a runtime
+    // dependency (same pinned version → no conflict, no APK growth).
+    implementation(libs.jackson.databind)
     if (vidmaWithFfmpeg) {
         // Optional full build: enables stream merging and audio conversion.
         implementation(libs.youtubedl.android.ffmpeg)

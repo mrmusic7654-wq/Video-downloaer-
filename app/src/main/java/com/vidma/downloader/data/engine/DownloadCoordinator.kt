@@ -199,9 +199,12 @@ class DownloadCoordinator(
                         url = p.url,
                         processId = id,
                         kindSelector = { request -> configureRequest(request, p, template) },
-                    ) { percent, eta, line ->
-                        onEngineLine(id, percent, eta, line)
-                    }
+                        // Named (not trailing): onProgress is no longer the
+                        // last parameter since the timeout cap was added.
+                        onProgress = { percent, eta, line ->
+                            onEngineLine(id, percent, eta, line)
+                        },
+                    )
                 } catch (error: Exception) {
                     // A process/bootstrap exception should still get a chance to
                     // use the narrow OkHttp direct-media fallback below.

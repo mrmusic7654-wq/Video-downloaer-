@@ -73,13 +73,11 @@ object DirectHttpEngine {
                 val body = response.body ?: return@withContext null
                 // Some servers answer "blocked / expired / login wall" with a
                 // 200 + an HTML page. Never write that into the library as a
-                // video file.
+                // video file. (The path extension is already known to be a
+                // media type — download() gated on canHandle() — so any HTML
+                // body here is a block/login-wall page, never real media.)
                 val contentType = response.header("Content-Type").orEmpty().lowercase(Locale.US)
-                if (contentType.contains("text/html") &&
-                    Uri.parse(url).lastPathSegment
-                        ?.substringAfterLast('.', "")
-                        ?.lowercase(Locale.US) !in extensions
-                ) {
+                if (contentType.contains("text/html")) {
                     return@withContext null
                 }
                 val extension = extensionFrom(url, response.header("Content-Type"))
