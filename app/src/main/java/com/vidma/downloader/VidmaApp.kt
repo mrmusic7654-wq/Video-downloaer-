@@ -24,12 +24,17 @@ class AppContainer(private val appContext: Context) {
     val coordinator: DownloadCoordinator = DownloadCoordinator(appContext, storage, prefs)
     val repository: DownloadRepository = DownloadRepositoryImpl(appContext, prefs, storage, coordinator)
 
-    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val initErrorHandler = kotlinx.coroutines.CoroutineExceptionHandler { _, error ->
+        android.util.Log.e("VidmaApp", "background init failed", error)
+    }
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO + initErrorHandler)
 
     init {
         appScope.launch {
-            // Wipe stale partial files from previous sessions.
-            storage.cleanStaging()
+            // Wipe stale partial files from previous sessions. Never fatal:
+            // a leftover .part file must not be able to kill the process.
+            runCatching { storage.cleanStaging() }
+                .onFailure { android.util.Log.w("VidmaApp", "staging cleanup failed", it) }
             // Unpack yt-dlp + python + ffmpeg native assets (first run only).
             runCatching { YtDlpEngine.initialize(appContext) }
                 .onFailure { android.util.Log.e("VidmaEngine", "engine init failed", it) }
