@@ -32,8 +32,9 @@ object DirectHttpEngine {
     private val calls = ConcurrentHashMap<String, Call>()
 
     private val extensions = setOf(
-        "mp4", "m4v", "webm", "mov", "mkv", "avi", "3gp", "ts",
-        "mp3", "m4a", "aac", "opus", "ogg", "flac", "wav",
+        "mp4", "m4v", "webm", "mov", "mkv", "avi", "3gp", "3g2", "ts",
+        "ogv", "flv", "wmv", "mpg", "mpeg", "f4v",
+        "mp3", "m4a", "aac", "opus", "ogg", "oga", "flac", "wav",
     )
 
     fun canHandle(url: String): Boolean {
@@ -70,6 +71,17 @@ object DirectHttpEngine {
             call.execute().use { response ->
                 if (!response.isSuccessful) return@withContext null
                 val body = response.body ?: return@withContext null
+                // Some servers answer "blocked / expired / login wall" with a
+                // 200 + an HTML page. Never write that into the library as a
+                // video file.
+                val contentType = response.header("Content-Type").orEmpty().lowercase(Locale.US)
+                if (contentType.contains("text/html") &&
+                    Uri.parse(url).lastPathSegment
+                        ?.substringAfterLast('.', "")
+                        ?.lowercase(Locale.US) !in extensions
+                ) {
+                    return@withContext null
+                }
                 val extension = extensionFrom(url, response.header("Content-Type"))
                 val base = cleanBase(title).ifBlank { "vidma_direct" }
                 val target = uniqueTarget(outputDir, base, extension)

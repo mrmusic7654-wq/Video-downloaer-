@@ -6,8 +6,10 @@ import androidx.lifecycle.viewModelScope
 import com.vidma.downloader.VidmaApp
 import com.vidma.downloader.data.engine.YtDlpEngine
 import com.vidma.downloader.domain.model.AudioFormatPref
+import com.vidma.downloader.domain.model.CaptureRequest
 import com.vidma.downloader.domain.model.ContainerPref
 import com.vidma.downloader.domain.model.DownloadTask
+import com.vidma.downloader.domain.model.EngineStatus
 import com.vidma.downloader.domain.model.FormatRules
 import com.vidma.downloader.domain.model.LibraryItem
 import com.vidma.downloader.domain.model.MediaKind
@@ -15,6 +17,7 @@ import com.vidma.downloader.domain.model.MediaSummary
 import com.vidma.downloader.domain.model.QualityPreset
 import com.vidma.downloader.domain.repository.DownloadRepository
 import com.vidma.downloader.ui.theme.AccentPreset
+import com.vidma.downloader.util.hostOf
 import com.vidma.downloader.util.normalizeUrl
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -53,12 +56,16 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
     val engineReady: StateFlow<Boolean> = repo.engineReady
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
+    /** Full engine lifecycle — the resolver UI reports "unpacking" honestly. */
+    val engineStatus: StateFlow<EngineStatus> = repo.engineStatus
+        .stateIn(viewModelScope, SharingStarted.Eagerly, EngineStatus.Initializing)
+
     /** Optional post-processing capability; the lean APK can still download. */
     val ffmpegReady: StateFlow<Boolean> = YtDlpEngine.ffmpegReady
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     val accent: StateFlow<AccentPreset> = appContainer.prefs.accentFlow
-        .stateIn(viewModelScope, SharingStarted.Eagerly, AccentPreset.Aurora)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, AccentPreset.Dream)
 
     val publicStorage: StateFlow<Boolean> = appContainer.prefs.publicStorageFlow
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
@@ -213,19 +220,78 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    fun startUrlDirect(url: String, kind: MediaKind, requestLabel: String, title: String?, cover: String?) {
+    /**
+     * Starts a download from the browser's capture sheet.
+     *
+     * * [useDirect] + a captured direct file + video mode → the exact file
+     *   the page plays, streamed through OkHttp with real progress (any site).
+     * * everything else → the yt-dlp engine, fed with the best known target:
+     *   a manifest found on the page, the page URL itself, or (audio-only +
+     *   FFmpeg) the direct file to demux sound from.
+     */
+    fun startCapture(
+        request: CaptureRequest,
+        useDirect: Boolean,
+        kind: MediaKind,
+        quality: QualityPreset,
+        container: ContainerPref,
+        audioFormat: AudioFormatPref,
+    ) {
+        val title = request.title?.takeIf { it.isNotBlank() }
+            ?: hostOf(request.pageUrl).ifBlank { request.pageUrl }
+
+        // Direct file: the exact media the page plays (video or audio).
+        // Streamed through OkHttp with real progress — works on any site.
+        if (useDirect && request.directUrl != null) {
+            repo.startDownload(
+                url = request.directUrl,
+                kind = kind,
+                selector = null,
+                audioFormat = null,
+                containerExt = null,
+                requestLabel = "Direct file",
+                title = title,
+                coverUrl = request.cover,
+                durationSec = 0,
+                directSource = true,
+            )
+            _transient.value = if (kind == MediaKind.Audio) {
+                "Downloading “${title.take(48)}” (direct audio)…"
+            } else {
+                "Downloading “${title.take(48)}” (direct file)…"
+            }
+            return
+        }
+
+        // Engine path.
+        val hasFfmpeg = ffmpegReady.value
+        val isAudio = kind == MediaKind.Audio
+        val url = when {
+            // A manifest found on the page beats re-resolving the whole page.
+            request.manifestUrl != null -> request.manifestUrl
+            else -> request.pageUrl
+        }
+        val label = when {
+            isAudio && !hasFfmpeg -> "Source audio"
+            else -> FormatRules.requestLabel(kind, quality, container, audioFormat)
+        }
         repo.startDownload(
             url = url,
             kind = kind,
-            selector = if (kind == MediaKind.Video) FormatRules.videoSelector(null) else null,
-            audioFormat = if (kind == MediaKind.Audio) AudioFormatPref.Mp3.ytArg else null,
-            containerExt = null,
-            requestLabel = requestLabel,
+            selector = if (isAudio) null else FormatRules.videoSelector(quality.height),
+            audioFormat = if (isAudio && hasFfmpeg) audioFormat.ytArg else null,
+            containerExt = if (isAudio) null else container.ext,
+            requestLabel = label,
             title = title,
-            coverUrl = cover,
+            coverUrl = request.cover,
             durationSec = 0,
+            directSource = false,
         )
-        _transient.value = "Queued $requestLabel download…"
+        _transient.value = if (isAudio) {
+            "Extracting ${audioFormat.label} audio…"
+        } else {
+            "Downloading “${title.take(48)}”…"
+        }
     }
 
     fun cancelTask(id: String) {

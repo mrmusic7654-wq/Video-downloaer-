@@ -19,20 +19,20 @@ native browser — all under one lucid, animated "aurora" glass design.
 
 | | |
 |---|---|
-| 🏠 **Download tab** | Paste any link (or share it into vidma from any app) → vidma extracts the media with yt-dlp and shows a format studio: **Video/Audio**, quality presets up to 8K, container (MP4/MKV/WebM), source audio formats in the lean build and MP3/M4A/Opus/FLAC/WAV conversion in full FFmpeg builds. |
+| 🏠 **Download tab** | Paste any link (or share it into vidma from any app) → vidma extracts the media with yt-dlp and shows a format studio: **Video/Audio only**, quality presets up to 8K (unavailable resolutions are marked "not offered"), container (MP4/MKV/WebM), source audio formats in the lean build and MP3/M4A/Opus/FLAC/WAV conversion in full FFmpeg builds. The resolver reports the *real* phase — engine unpacking vs metadata scan — and every failure has a one-tap retry. |
 | 📚 **Library tab** | Searchable grid of everything you saved, with thumbnails, file sizes and dates. Tap to **play in a glass ExoPlayer sheet**, share, open with another app, or delete. |
-| 🌐 **Browser tab** | A Chromium-powered Android system WebView with back/forward/refresh, progress bar, Google search fallback and a glowing **"download this page"** button. Long-press and drag the button to place it anywhere; its position is remembered. |
+| 🌐 **Browser tab** | A Chromium-powered Android system WebView with back/forward/refresh, progress bar, Google search fallback and a glowing **"save this media"** button. Tapping it opens a **capture sheet**: the page's actual playing `<video>`/`<audio>` file is offered as a *direct file* (streamed over plain HTTP with real progress — works on **any** site), alongside *engine resolve* for best-quality extraction (HLS/DASH manifests found on the page are used automatically). Video/audio-only, quality, container and audio format are all selectable. Long-press and drag the button to place it anywhere; its position is remembered. |
 | ⚙️ Settings | 4 switchable **accent themes** that re-skin the whole app & backdrop live, storage policy (public Downloads vs private shelf), engine status, library hygiene. |
-| 🎨 Design | Fully procedural **lucid fluid backdrop** — breathing aurora orbs, starfield twinkle, light ribbons, vignette — drawn in Compose at 60fps (no bitmap). Glass cards, gradient CTAs with shimmer, glow progress rings, haptic feedback, custom Sora/Inter typography. |
-| 🧠 Engine | Real **yt-dlp + Python** with a lean single-file mode, concurrent downloads (2 slots, queue with cancel/retry), live %/ETA/console line, `.part` resume, thumbnail auto-save and an OkHttp fallback for direct CDN media URLs. Optional FFmpeg builds add merging/audio conversion. |
+| 🎨 Design | Premium **black · purple · white "Dream Violet"** theme: near-black violet ink, vivid purple CTAs, lavender-mist highlights. Fully procedural **lucid fluid backdrop** — a breathing moon bloom, aurora orbs, starfield twinkle, light ribbons, vignette — drawn in Compose at 60fps (no bitmap). Glass cards, gradient CTAs with shimmer, glow progress rings, haptic feedback, custom Sora/Inter typography. |
+| 🧠 Engine | Real **yt-dlp + Python** with a lean single-file mode, concurrent downloads (2 slots, queue with cancel/retry), live %/ETA/console line, `.part` resume, thumbnail auto-save and an OkHttp path for direct media files. **Stall-proof:** a per-task watchdog kills the engine process when no data flows (resolving or downloading) and the resolver has a hard timeout — nothing can sit "not progressing" forever. Optional FFmpeg builds add merging/audio conversion. |
 | 🔒 Storage | Scoped-storage safe on every Android version: files land in `Download/Vidma` via **MediaStore** (no all-files permission), with an in-app private shelf option. |
 
 ## 📱 Screens
 
-1. **Home / Capture** — one glass URL field with **Paste**, Resolve → format studio → big gradient **Download** button; the Chromium browser feeds the same queue.
-2. **Downloads** — a dedicated live progress centre with aggregate progress, active/queued/finished counters, ETA, retry and cancel actions.
+1. **Home / Capture** — one glass URL field with **Paste**, Resolve → format studio (video/audio-only, quality, container, audio format) → big gradient **Download** button; the Chromium browser feeds the same queue.
+2. **Downloads** — a dedicated live progress centre with aggregate progress, active/queued/finished counters, ETA, retry and cancel actions. Queued/resolving tasks always show what they're doing.
 3. **Library** — search, video/audio filters, 2-column grid, in-app player sheet.
-4. **Browser** — Chromium-powered Android system WebView + instant download action that can be long-press dragged.
+4. **Browser** — Chromium-powered Android system WebView + a long-press-draggable **capture action** that opens the "Save this media" sheet (direct page file or engine resolve, with full format choices).
 Plus a floating Settings screen and an always-visible **active download tray** above the dock.
 
 ## 🏗 Architecture

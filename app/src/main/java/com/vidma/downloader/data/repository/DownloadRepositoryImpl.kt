@@ -7,6 +7,7 @@ import com.vidma.downloader.data.model.HistoryRecord
 import com.vidma.downloader.data.storage.MediaStorage
 import com.vidma.downloader.data.store.VidmaPrefs
 import com.vidma.downloader.domain.model.DownloadTask
+import com.vidma.downloader.domain.model.EngineStatus
 import com.vidma.downloader.domain.model.LibraryItem
 import com.vidma.downloader.domain.model.MediaKind
 import com.vidma.downloader.domain.model.MediaSummary
@@ -24,7 +25,10 @@ class DownloadRepositoryImpl(
     private val coordinator: DownloadCoordinator,
 ) : DownloadRepository {
 
-    override val engineReady: Flow<Boolean> = YtDlpEngine.ready
+    override val engineReady: Flow<Boolean> =
+        YtDlpEngine.status.map { it is EngineStatus.Ready }
+
+    override val engineStatus: Flow<EngineStatus> = YtDlpEngine.status
 
     override val tasks: Flow<List<DownloadTask>> = coordinator.tasks
 
@@ -53,6 +57,7 @@ class DownloadRepositoryImpl(
         title: String?,
         coverUrl: String?,
         durationSec: Int,
+        directSource: Boolean,
     ): String = coordinator.start(
         url = url,
         kind = kind,
@@ -64,6 +69,7 @@ class DownloadRepositoryImpl(
         coverUrl = coverUrl,
         durationSec = durationSec,
         toPublic = prefs.publicStorageNow,
+        directSource = directSource,
     )
 
     override fun cancelTask(id: String) = coordinator.cancel(id)

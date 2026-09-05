@@ -12,6 +12,65 @@ fun DownloadTask.percentText(): String =
 
 enum class MediaKind { Video, Audio }
 
+/** Lifecycle of the bundled yt-dlp runtime (unpack → ready / failed). */
+sealed interface EngineStatus {
+    /** First launch: the Python/yt-dlp payload is still unpacking. */
+    data object Initializing : EngineStatus
+
+    data object Ready : EngineStatus
+
+    data class Failed(val message: String) : EngineStatus
+}
+
+/** A media element discovered on a browser page (a real <video>/<audio> tag). */
+data class PageMediaSource(
+    val kind: MediaKind,
+    val url: String,
+    val title: String? = null,
+    val poster: String? = null,
+) {
+    /** URL without query string / fragment (what determines the file type). */
+    val path: String get() = url.substringBefore('?').substringBefore('#')
+
+    /** True for plain media files an HTTP client can fetch directly. */
+    val isDirectFile: Boolean
+        get() {
+            val ext = path.substringAfterLast('.', "").lowercase()
+            return ext in DIRECT_MEDIA_EXTS
+        }
+
+    /** True for streaming manifests (HLS/DASH) that the engine understands. */
+    val isManifest: Boolean
+        get() = path.lowercase().contains(".m3u8") || path.lowercase().contains(".mpd")
+
+    /** MSE blobs live inside the WebView — not fetchable by the app process. */
+    val isBlob: Boolean get() = url.startsWith("blob:")
+
+    private companion object {
+        val DIRECT_MEDIA_EXTS = setOf(
+            "mp4", "m4v", "webm", "mov", "mkv", "avi", "3gp", "3g2", "ts",
+            "ogv", "flv", "wmv", "mpg", "mpeg", "f4v",
+            "mp3", "m4a", "aac", "opus", "ogg", "oga", "flac", "wav",
+        )
+    }
+}
+
+/**
+ * Everything the browser hand-off passes to the download queue: the page it
+ * came from, a streaming manifest found on it (better engine target) and a
+ * direct media file (fast OkHttp path that works on any site).
+ */
+data class CaptureRequest(
+    val pageUrl: String,
+    val manifestUrl: String? = null,
+    val directUrl: String? = null,
+    val title: String? = null,
+    val cover: String? = null,
+) {
+    /** The URL the engine should resolve (manifest when present, else the page). */
+    val engineTarget: String get() = manifestUrl ?: pageUrl
+}
+
 /** Lifecycle of one download task. */
 enum class DownloadState {
     /** Waiting for an engine slot (not yet used — kept for queue semantics). */

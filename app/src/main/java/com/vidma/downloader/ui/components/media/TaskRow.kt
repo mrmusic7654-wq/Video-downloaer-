@@ -169,10 +169,22 @@ fun TaskRow(
                     }
                     DownloadState.Completed -> Unit
                     else -> {
-                        if (task.statusLine.isNotBlank()) {
+                        // Queued/Resolving must never look frozen: always show
+                        // what the task is doing, even before the engine
+                        // emitted its first line.
+                        val phaseText = when (task.state) {
+                            DownloadState.Queued -> task.statusLine.ifBlank {
+                                "Queued — waiting for a free engine slot…"
+                            }
+                            DownloadState.Resolving -> task.statusLine.ifBlank {
+                                "Resolving link with the engine…"
+                            }
+                            else -> task.statusLine
+                        }
+                        if (phaseText.isNotBlank()) {
                             Spacer(Modifier.height(4.dp))
                             Text(
-                                text = task.statusLine.take(90),
+                                text = phaseText.take(90),
                                 style = MaterialTheme.typography.labelSmall.copy(color = VidmaBase.TextMid),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
