@@ -691,13 +691,13 @@ private fun QualityStudio(
             }
         }
         Spacer(Modifier.height(4.dp))
-        // Video + audio vs video-only stream. Disabled once a container choice
-        // is in play because video-only does not need remuxing.
+        // Video + audio vs video-only stream. Video-only needs no remuxing,
+        // so the container row is hidden when it is selected.
         Text(
             text = "OUTPUT",
             style = MaterialTheme.typography.labelSmall.copy(color = VidmaBase.TextLow),
         )
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             VidmaChoiceChip(
                 text = "Video + audio",
                 selected = !videoOnly,
