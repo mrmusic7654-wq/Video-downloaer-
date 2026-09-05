@@ -60,6 +60,7 @@ import com.vidma.downloader.domain.model.AudioFormatPref
 import com.vidma.downloader.domain.model.ContainerPref
 import com.vidma.downloader.domain.model.DownloadState
 import com.vidma.downloader.domain.model.DownloadTask
+import com.vidma.downloader.domain.model.EngineStatus
 import com.vidma.downloader.domain.model.LibraryItem
 import com.vidma.downloader.domain.model.MediaKind
 import com.vidma.downloader.domain.model.MediaSummary
@@ -109,6 +110,7 @@ fun DownloaderScreen(
     val downloads by vm.downloads.collectAsStateV()
     val library by vm.library.collectAsStateV()
     val engineReady by vm.engineReady.collectAsStateV()
+    val engineStatus by vm.engineStatus.collectAsStateV()
     val ffmpegReady by vm.ffmpegReady.collectAsStateV()
     val sharedUrl by vm.lastSharedUrl.collectAsStateV()
 
@@ -281,10 +283,10 @@ fun DownloaderScreen(
         // ================= resolver output / errors =================
         when (val phase = fetchPhase) {
             is FetchPhase.Error -> item {
-                ErrorBanner(message = phase.message, palette = palette)
+                ErrorBanner(message = phase.message, onRetry = vm::fetch, palette = palette)
             }
             is FetchPhase.Fetching -> item {
-                ResolvingCard(url = urlText, palette = palette)
+                ResolvingCard(url = urlText, engineStatus = engineStatus, palette = palette)
             }
             is FetchPhase.Ready -> item {
                 MediaStudio(
@@ -365,7 +367,11 @@ fun DownloaderScreen(
             }
         } else {
             item {
-                EngineStartingCard(palette = palette, onRetry = vm::retryEngine)
+                EngineStartingCard(
+                    engineStatus = engineStatus,
+                    palette = palette,
+                    onRetry = vm::retryEngine,
+                )
             }
         }
 
@@ -448,7 +454,7 @@ private fun BrandHeader(
 }
 
 @Composable
-private fun ErrorBanner(message: String, palette: VidmaPalette) {
+private fun ErrorBanner(message: String, onRetry: () -> Unit, palette: VidmaPalette) {
     GlassCard(
         shape = RoundedCornerShape(18.dp),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
@@ -479,27 +485,62 @@ private fun ErrorBanner(message: String, palette: VidmaPalette) {
                     text = message,
                     style = MaterialTheme.typography.bodySmall.copy(color = VidmaBase.TextMid),
                 )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "Tap to try again",
+                    style = MaterialTheme.typography.labelSmall.copy(color = palette.secondary),
+                    modifier = Modifier.clickable(onClick = onRetry),
+                )
             }
         }
     }
 }
 
+/**
+ * Resolver loading card. It reports the *real* phase: while the first-run
+ * runtime is still unpacking it says so (previously the card pretended a scan
+ * was running, which looked like a hang), then it shows the metadata scan.
+ */
 @Composable
-private fun ResolvingCard(url: String, palette: VidmaPalette) {
+private fun ResolvingCard(url: String, engineStatus: EngineStatus, palette: VidmaPalette) {
+    val (title, subtitle) = when (engineStatus) {
+        is EngineStatus.Initializing ->
+            "Preparing the download engine…" to
+                "First launch unpacks the bundled yt-dlp runtime — this only happens once."
+        is EngineStatus.Ready ->
+            "Scanning & extracting metadata…" to url.take(90)
+        is EngineStatus.Failed ->
+            "Engine not ready" to engineStatus.message
+    }
     GlassCard(contentPadding = PaddingValues(18.dp), glowing = true) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            AuroraRing(size = 26.dp, palette = palette)
+            when (engineStatus) {
+                is EngineStatus.Failed -> Box(
+                    modifier = Modifier
+                        .requiredSize(26.dp)
+                        .background(palette.danger.copy(alpha = 0.18f), RoundedCornerShape(9.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Warning,
+                        contentDescription = null,
+                        tint = palette.danger,
+                        modifier = Modifier.requiredSize(16.dp),
+                    )
+                }
+                else -> AuroraRing(size = 26.dp, palette = palette)
+            }
             Spacer(Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Scanning & extracting metadata…",
+                    text = title,
                     style = MaterialTheme.typography.titleSmall.copy(color = VidmaBase.TextHigh),
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    text = url.take(90),
+                    text = subtitle,
                     style = MaterialTheme.typography.labelSmall.copy(color = VidmaBase.TextLow),
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -508,24 +549,43 @@ private fun ResolvingCard(url: String, palette: VidmaPalette) {
 }
 
 @Composable
-private fun EngineStartingCard(palette: VidmaPalette, onRetry: () -> Unit) {
+private fun EngineStartingCard(engineStatus: EngineStatus, palette: VidmaPalette, onRetry: () -> Unit) {
+    val (title, subtitle) = when (engineStatus) {
+        is EngineStatus.Initializing ->
+            "Preparing the download engine" to
+                "First launch prepares the lightweight yt-dlp runtime. Full builds can add FFmpeg for merging and audio conversion."
+        is EngineStatus.Failed ->
+            "The download engine failed to start" to engineStatus.message
+        is EngineStatus.Ready ->
+            "Preparing the download engine" to ""
+    }
     GlassCard(contentPadding = PaddingValues(20.dp)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-            AuroraRing(size = 34.dp, palette = palette)
+            when (engineStatus) {
+                is EngineStatus.Failed -> Icon(
+                    imageVector = Icons.Rounded.Warning,
+                    contentDescription = null,
+                    tint = palette.danger,
+                    modifier = Modifier.requiredSize(30.dp),
+                )
+                else -> AuroraRing(size = 34.dp, palette = palette)
+            }
             Spacer(Modifier.height(14.dp))
             Text(
-                text = "Preparing the download engine",
+                text = title,
                 style = MaterialTheme.typography.titleSmall.copy(color = VidmaBase.TextHigh),
             )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = "First launch prepares the lightweight yt-dlp runtime. Full builds can add FFmpeg for merging and audio conversion.",
-                style = MaterialTheme.typography.bodySmall.copy(color = VidmaBase.TextMid),
-                textAlign = TextAlign.Center,
-            )
+            if (subtitle.isNotBlank()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall.copy(color = VidmaBase.TextMid),
+                    textAlign = TextAlign.Center,
+                )
+            }
             Spacer(Modifier.height(10.dp))
             Text(
-                text = "Tap to retry",
+                text = if (engineStatus is EngineStatus.Failed) "Tap to retry" else "Tap to retry if this takes too long",
                 style = MaterialTheme.typography.labelSmall.copy(color = palette.secondary),
                 modifier = Modifier.clickable(onClick = onRetry),
             )
@@ -605,7 +665,10 @@ private fun MediaStudio(
         GlassCard(contentPadding = PaddingValues(16.dp)) {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 VidmaModeToggle(
-                    options = listOf("Video" to (kind == MediaKind.Video), "Audio" to (kind == MediaKind.Audio)),
+                    options = listOf(
+                        "Video" to (kind == MediaKind.Video),
+                        "Audio only" to (kind == MediaKind.Audio),
+                    ),
                     onSelect = { i -> onKind(if (i == 0) MediaKind.Video else MediaKind.Audio) },
                 )
                 if (kind == MediaKind.Video) {
@@ -658,10 +721,13 @@ private fun QualityStudio(
         }
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(qualityChoices()) { preset ->
+                val maxH = summary.availableHeights.firstOrNull()
+                val unavailable = maxH != null && preset.height != null && preset.height > maxH
                 VidmaChoiceChip(
                     text = preset.label,
+                    subtitle = if (unavailable) "not offered" else null,
                     selected = quality == preset,
-                    onClick = { onQuality(preset) },
+                    onClick = { if (!unavailable) onQuality(preset) },
                     palette = palette,
                 )
             }

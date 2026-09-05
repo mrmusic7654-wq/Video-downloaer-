@@ -13,21 +13,29 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Runs yt-dlp tasks (max [MAX_CONCURRENT] at once), tracks live state and
  * publishes finished media into the library. Owns its IO coroutine scope for
  * the lifetime of the process.
+ *
+ * Two guards make sure a task can never sit "not progressing" forever:
+ *  * a per-task **stall watchdog** kills the engine process when no data
+ *    flows for a while (resolving or downloading), and
+ *  * the engine's own hard time caps (see [YtDlpEngine]).
  */
 class DownloadCoordinator(
     private val appContext: Context,
@@ -56,13 +64,19 @@ class DownloadCoordinator(
         val coverUrl: String?,
         val durationSec: Int,
         val toPublic: Boolean,
+        val directSource: Boolean = false,
     )
 
     // Touched from main (start/cancel/retry/remove) and IO (task completion),
     // so all three are concurrent.
-    private val params = java.util.concurrent.ConcurrentHashMap<String, StartParams>()
-    private val activeJobs = java.util.concurrent.ConcurrentHashMap<String, Job>()
-    private val cancelled = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val params = ConcurrentHashMap<String, StartParams>()
+    private val activeJobs = ConcurrentHashMap<String, Job>()
+    private val cancelled = ConcurrentHashMap.newKeySet<String>()
+
+    /** Last time a task emitted any engine line (stall detection). */
+    private val activityStamps = ConcurrentHashMap<String, AtomicLong>()
+    /** Set by the watchdog when it kills a stalled task (used for the error line). */
+    private val stalledMessages = ConcurrentHashMap<String, String>()
 
     fun start(
         url: String,
@@ -75,14 +89,17 @@ class DownloadCoordinator(
         coverUrl: String?,
         durationSec: Int,
         toPublic: Boolean,
+        directSource: Boolean = false,
     ): String {
         val id = UUID.randomUUID().toString()
         val p = StartParams(
             url = url, kind = kind, selector = selector, audioFormat = audioFormat,
             containerExt = containerExt, requestLabel = requestLabel, title = title,
             coverUrl = coverUrl, durationSec = durationSec, toPublic = toPublic,
+            directSource = directSource,
         )
         params[id] = p
+        activityStamps[id] = AtomicLong(System.currentTimeMillis())
         tasksMap.update { current ->
             current + (id to DownloadTask(
                 id = id,
@@ -129,11 +146,14 @@ class DownloadCoordinator(
             url = p.url, kind = p.kind, selector = p.selector, audioFormat = p.audioFormat,
             containerExt = p.containerExt, requestLabel = p.requestLabel, title = p.title,
             coverUrl = p.coverUrl, durationSec = p.durationSec, toPublic = p.toPublic,
+            directSource = p.directSource,
         )
     }
 
     fun remove(id: String) {
         params.remove(id)
+        activityStamps.remove(id)
+        stalledMessages.remove(id)
         val job = activeJobs.remove(id)
         if (job?.isActive == true) {
             cancelled.add(id)
@@ -146,33 +166,54 @@ class DownloadCoordinator(
     }
 
     private suspend fun runTask(id: String, p: StartParams) {
+        val activity = activityStamps[id] ?: AtomicLong(System.currentTimeMillis()).also { activityStamps[id] = it }
         update(id) { copy(state = DownloadState.Resolving) }
         // dedicated per-task staging sub-dir so cleanup never harms siblings
         val stagedDir = File(storage.stagingDir(), id).apply { mkdirs() }
+        // Watchdog lives inside the task's coroutine scope: it is always
+        // cancelled (finally) and always sees the task's cancellation.
+        val watchdog = scope.launch { watchForStall(id, activity) }
         try {
             val template = stagedDir.absolutePath + File.separator + "%(title).90B [%(id)s].%(ext)s"
             var engineFailure: String? = null
-            var exitCode = try {
-                YtDlpEngine.execute(
-                    context = appContext,
+            var directOutput: File? = null
+            var exitCode = if (p.directSource) {
+                // The browser captured a plain media file on the page — skip
+                // the extractor entirely and stream it with OkHttp. Works on
+                // any site and reports real byte-level progress.
+                update(id) { copy(state = DownloadState.Downloading, statusLine = "Direct media download…") }
+                val out = DirectHttpEngine.download(
                     url = p.url,
+                    outputDir = stagedDir,
+                    title = p.title,
                     processId = id,
-                    kindSelector = { request -> configureRequest(request, p, template) },
-                ) { percent, eta, line ->
-                    onEngineLine(id, percent, eta, line)
+                    onProgress = { percent, eta, line -> onEngineLine(id, percent, eta, line) },
+                )
+                if (out == null) engineFailure = "The direct file could not be downloaded (blocked or expired link?)"
+                directOutput = out
+                if (out != null) 0 else -1
+            } else {
+                try {
+                    YtDlpEngine.execute(
+                        context = appContext,
+                        url = p.url,
+                        processId = id,
+                        kindSelector = { request -> configureRequest(request, p, template) },
+                    ) { percent, eta, line ->
+                        onEngineLine(id, percent, eta, line)
+                    }
+                } catch (error: Exception) {
+                    // A process/bootstrap exception should still get a chance to
+                    // use the narrow OkHttp direct-media fallback below.
+                    engineFailure = error.message?.take(240)
+                    -1
                 }
-            } catch (error: Exception) {
-                // A process/bootstrap exception should still get a chance to
-                // use the narrow OkHttp direct-media fallback below.
-                engineFailure = error.message?.take(240)
-                -1
             }
 
             // Direct CDN/file URLs do not need a second extractor. If yt-dlp
             // cannot recognise one, the OkHttp path still gives the user a
             // reliable download with the same progress UI.
-            var directOutput: File? = null
-            if (exitCode != 0 && id !in cancelled && DirectHttpEngine.canHandle(p.url)) {
+            if (exitCode != 0 && !p.directSource && id !in cancelled && DirectHttpEngine.canHandle(p.url)) {
                 update(id) {
                     copy(
                         state = DownloadState.Downloading,
@@ -180,14 +221,17 @@ class DownloadCoordinator(
                         error = null,
                     )
                 }
-                directOutput = DirectHttpEngine.download(
+                val fallback = DirectHttpEngine.download(
                     url = p.url,
                     outputDir = stagedDir,
                     title = p.title,
                     processId = id,
                     onProgress = { percent, eta, line -> onEngineLine(id, percent, eta, line) },
                 )
-                if (directOutput != null) exitCode = 0
+                if (fallback != null) {
+                    directOutput = fallback
+                    exitCode = 0
+                }
             }
 
             if (id in cancelled) {
@@ -197,12 +241,15 @@ class DownloadCoordinator(
             }
 
             if (exitCode != 0) {
-                val detail = tasksMap.value[id]?.statusLine?.takeIf { it.isNotBlank() }
+                val detail = stalledMessages[id]
+                    ?: tasksMap.value[id]?.statusLine?.takeIf { it.isNotBlank() }
+                    ?: engineFailure
+                    ?: "yt-dlp exited with code $exitCode"
                 cleanupTaskDir(stagedDir)
                 update(id) {
                     copy(
                         state = DownloadState.Failed,
-                        error = detail ?: engineFailure ?: "yt-dlp exited with code $exitCode",
+                        error = detail,
                     )
                 }
                 return
@@ -257,6 +304,40 @@ class DownloadCoordinator(
                 )
             }
             cleanupTaskDir(stagedDir)
+        } finally {
+            watchdog.cancel()
+            activityStamps.remove(id)
+            stalledMessages.remove(id)
+        }
+    }
+
+    /**
+     * Kills a task when its engine goes silent: no output line for
+     * [RESOLVE_STALL_MS] while resolving, or no data for [DOWNLOAD_STALL_MS]
+     * while downloading. (Queued tasks are exempt — they merely wait for a
+     * free slot, no process is running.) After the kill, [runTask] records
+     * the task as failed with an actionable message (retry is one tap away).
+     */
+    private suspend fun watchForStall(id: String, activity: AtomicLong) {
+        while (true) {
+            delay(8_000)
+            val task = tasksMap.value[id] ?: return
+            if (!task.isActive) return
+            val limitMs = when (task.state) {
+                DownloadState.Resolving -> RESOLVE_STALL_MS
+                DownloadState.Downloading -> DOWNLOAD_STALL_MS
+                else -> continue
+            }
+            if (System.currentTimeMillis() - activity.get() < limitMs) continue
+            stalledMessages[id] = if (task.state == DownloadState.Resolving) {
+                "The engine stalled while resolving this link — it may be unreachable or too slow. Tap retry."
+            } else {
+                "The transfer stalled (no data for ${DOWNLOAD_STALL_MS / 60_000} min). Tap retry, or try a different format."
+            }
+            update(id) { copy(statusLine = "Engine stalled — stopping…") }
+            YtDlpEngine.cancel(id)
+            DirectHttpEngine.cancel(id)
+            return
         }
     }
 
@@ -295,6 +376,7 @@ class DownloadCoordinator(
         Regex("height<=([0-9]+)").find(selector.orEmpty())?.groupValues?.getOrNull(1)?.toIntOrNull()
 
     private fun onEngineLine(id: String, percent: Float, eta: Long, line: String) {
+        activityStamps[id]?.set(System.currentTimeMillis())
         val current = tasksMap.value[id] ?: return
         val trimmed = line.trim().take(160)
         if (percent >= 0f && percent <= 100f) {
@@ -380,6 +462,10 @@ class DownloadCoordinator(
 
     private companion object {
         const val MAX_CONCURRENT = 2
+        /** Resolving silence before we kill the extractor. */
+        const val RESOLVE_STALL_MS = 100_000L
+        /** Download silence (no bytes) before we kill the transfer. */
+        const val DOWNLOAD_STALL_MS = 150_000L
         val COVER_EXTS = setOf("jpg", "jpeg", "png", "webp", "bmp")
     }
 }

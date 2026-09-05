@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -190,10 +191,21 @@ fun VidmaToast(
                     .background(
                         Brush.linearGradient(
                             listOf(
-                                Color(0xF71A1E38),
-                                Color(0xF70E1128),
+                                Color(0xF5191038),
+                                Color(0xF50A0618),
                             )
                         )
+                    )
+                    .border(
+                        width = 1.dp,
+                        brush = Brush.linearGradient(
+                            listOf(
+                                palette.primary.copy(alpha = 0.45f),
+                                Color.White.copy(alpha = 0.10f),
+                                palette.secondary.copy(alpha = 0.30f),
+                            ),
+                        ),
+                        shape = RoundedCornerShape(50),
                     )
                     .padding(horizontal = 20.dp, vertical = 12.dp),
             ) {

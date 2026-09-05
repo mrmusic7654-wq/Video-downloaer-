@@ -35,7 +35,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
@@ -54,8 +56,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.activity.compose.BackHandler
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.vidma.downloader.domain.model.CaptureRequest
 import com.vidma.downloader.domain.model.FabPosition
-import com.vidma.downloader.domain.model.MediaKind
+import com.vidma.downloader.domain.model.PageMediaSource
 import com.vidma.downloader.features.downloader.DownloaderViewModel
 import com.vidma.downloader.ui.components.core.GlassCard
 import com.vidma.downloader.ui.components.core.GlassTextField
@@ -90,12 +93,23 @@ fun BrowserScreen(
     val pageTitle = browserVm.pageTitle
     val addressText = browserVm.addressText
     val savedFabPosition by browserVm.fabPosition.collectAsStateWithLifecycle()
+    val engineReady by downloaderVm.engineReady.collectAsStateWithLifecycle()
+    val ffmpegReady by downloaderVm.ffmpegReady.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+
+    /** Non-null while the "Save this media" sheet is up. */
+    var captureSpec by remember { mutableStateOf<CaptureSheetSpec?>(null) }
 
     // System back walks the WebView history before leaving the app.
     BackHandler(enabled = currentUrl.isNotBlank() && browserVm.canGoBack) {
         browserVm.goBack()
     }
+    // …but when the capture sheet is open, back closes the sheet first.
+    BackHandler(enabled = captureSpec != null) {
+        captureSpec = null
+    }
 
+    Box(modifier = Modifier.fillMaxSize()) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -198,14 +212,23 @@ fun BrowserScreen(
                 DownloadPageFab(
                     onClick = {
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        downloaderVm.startUrlDirect(
-                            url = currentUrl,
-                            kind = MediaKind.Video,
-                            requestLabel = "Page video · mp4",
-                            title = pageTitle.takeIf { it.isNotBlank() }?.let { "$it — ${hostOf(currentUrl)}" }
-                                ?: hostOf(currentUrl),
-                            cover = null,
-                        )
+                        if (captureSpec == null) {
+                            scope.launch {
+                                // Ask the page what it is actually playing,
+                                // then let the user pick source/format.
+                                val sources = browserVm.capturePageMedia()
+                                val request = CaptureRequest(
+                                    pageUrl = currentUrl,
+                                    manifestUrl = sources.firstOrNull { it.isManifest }?.url,
+                                    directUrl = sources.firstOrNull { it.isDirectFile }?.url,
+                                    title = pageTitle.takeIf { it.isNotBlank() }
+                                        ?.let { "$it — ${hostOf(currentUrl)}" }
+                                        ?: hostOf(currentUrl),
+                                    cover = sources.firstOrNull { !it.poster.isNullOrBlank() }?.poster,
+                                )
+                                captureSpec = CaptureSheetSpec(request, sources)
+                            }
+                        }
                     },
                     modifier = Modifier
                         .offset { fabOffset }
@@ -244,7 +267,38 @@ fun BrowserScreen(
             }
         }
     }
+
+        // ================= "Save this media" sheet =================
+        val spec = captureSpec
+        if (spec != null) {
+            CaptureSheet(
+                request = spec.request,
+                sources = spec.sources,
+                engineReady = engineReady,
+                ffmpegReady = ffmpegReady,
+                onDismiss = { captureSpec = null },
+                onDownload = { useDirect, kind, quality, container, audioFormat ->
+                    captureSpec = null
+                    downloaderVm.startCapture(
+                        request = spec.request,
+                        useDirect = useDirect,
+                        kind = kind,
+                        quality = quality,
+                        container = container,
+                        audioFormat = audioFormat,
+                    )
+                },
+                palette = palette,
+            )
+        }
+    }
 }
+
+/** State of the open capture sheet (request + what the page was playing). */
+private data class CaptureSheetSpec(
+    val request: CaptureRequest,
+    val sources: List<PageMediaSource>,
+)
 
 @Composable
 private fun DownloadPageFab(

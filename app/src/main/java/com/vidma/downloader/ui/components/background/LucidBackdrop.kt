@@ -110,6 +110,26 @@ fun LucidBackdrop(
                 ),
             )
 
+            // 1.5 — the "moon bloom": a huge, very soft lavender-white wash
+            // high in the sky that gives the whole scene its dreamy light.
+            val moonX = w * 0.78f
+            val moonY = h * 0.06f
+            val moonR = w * 0.42f
+            val moonBreath = 0.9f + 0.1f * sin(t * 0.7f + 0.6f)
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        palette.secondary.copy(alpha = 0.16f * moonBreath),
+                        palette.primary.copy(alpha = 0.07f * moonBreath),
+                        Color.Transparent,
+                    ),
+                    center = Offset(moonX, moonY),
+                    radius = moonR,
+                ),
+                radius = moonR,
+                center = Offset(moonX, moonY),
+            )
+
             // 2 — aurora orbs (soft radial blooms with breathing alpha)
             orbs.forEach { orb ->
                 val px = orb.cx + (driftA - 0.5f) * w * orb.driftRange
@@ -141,10 +161,10 @@ fun LucidBackdrop(
             // 4 — flowing light streaks (very subtle "fluid" ribbons)
             drawStreaks(w, h, density, flow, palette)
 
-            // 5 — vignette
+            // 5 — vignette (purple-black, so edges sink into the ink)
             drawRect(
                 brush = Brush.radialGradient(
-                    colors = listOf(Color.Transparent, Color(0x80020512)),
+                    colors = listOf(Color.Transparent, Color(0x85040212)),
                     center = Offset(w * 0.5f, h * 0.42f),
                     radius = w * 0.78f,
                 ),
@@ -209,13 +229,15 @@ private data class StarSpec(
 private fun buildOrbSpecs(palette: VidmaPalette): List<OrbSpec> {
     val (a, b, c) = palette.orbGradient
     return listOf(
-        OrbSpec(0.16f, 0.06f, 340f, a, 0.42f, 0.10f, 1.0f, 0.4f),
-        OrbSpec(0.88f, 0.18f, 300f, b, 0.34f, 0.14f, 0.8f, 2.1f),
-        OrbSpec(0.74f, 0.72f, 380f, c, 0.26f, 0.12f, 0.7f, 4.2f),
-        OrbSpec(0.10f, 0.85f, 260f, a.copy(alpha = 1f), 0.20f, 0.16f, 1.2f, 1.1f),
-        OrbSpec(0.5f, 0.38f, 190f, b.copy(alpha = 1f), 0.14f, 0.20f, 0.9f, 5.3f),
+        OrbSpec(0.16f, 0.06f, 340f, a, 0.46f, 0.10f, 1.0f, 0.4f),
+        OrbSpec(0.88f, 0.18f, 300f, b, 0.40f, 0.14f, 0.8f, 2.1f),
+        OrbSpec(0.74f, 0.72f, 380f, c, 0.30f, 0.12f, 0.7f, 4.2f),
+        OrbSpec(0.10f, 0.85f, 260f, a.copy(alpha = 1f), 0.24f, 0.16f, 1.2f, 1.1f),
+        OrbSpec(0.5f, 0.38f, 190f, b.copy(alpha = 1f), 0.18f, 0.20f, 0.9f, 5.3f),
+        // a low lavender haze that pools at the bottom of the scene
+        OrbSpec(0.5f, 1.02f, 420f, b, 0.22f, 0.18f, 0.6f, 3.0f),
     )
 }
 
 /** Tiny helper to run a backdrop used by previews/tests without theme access. */
-val PreviewPalette = VidmaPalette(accent = AccentPreset.Aurora)
+val PreviewPalette = VidmaPalette(accent = AccentPreset.Dream)

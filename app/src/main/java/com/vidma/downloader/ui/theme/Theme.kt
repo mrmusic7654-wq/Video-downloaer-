@@ -12,7 +12,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 /** Current app palette, provided under the Material theme. */
-val LocalVidmaPalette = staticCompositionLocalOf { VidmaPalette(accent = AccentPreset.Aurora) }
+val LocalVidmaPalette = staticCompositionLocalOf { VidmaPalette(accent = AccentPreset.Dream) }
 
 /** Deep glass look used by every card / dock / sheet in the app. */
 val VidmaShapes = Shapes(
@@ -25,35 +25,37 @@ val VidmaShapes = Shapes(
 
 @Composable
 fun VidmaTheme(
-    accent: AccentPreset = AccentPreset.Aurora,
+    accent: AccentPreset = AccentPreset.Dream,
     content: @Composable () -> Unit,
 ) {
     val palette = VidmaPalette(accent = accent)
+    // Purple-black surfaces: every container step lifts toward violet,
+    // so layered glass reads as "dreamy depth" instead of grey.
     val scheme = darkColorScheme(
         primary = palette.primary,
         onPrimary = Color(0xFF0B0620),
         primaryContainer = palette.primary.copy(alpha = 0.22f),
         onPrimaryContainer = Color(0xFFEDE9FF),
         secondary = palette.secondary,
-        onSecondary = Color(0xFF00212B),
+        onSecondary = Color(0xFF191026),
         secondaryContainer = palette.secondary.copy(alpha = 0.18f),
-        onSecondaryContainer = Color(0xFFDCFFFF),
+        onSecondaryContainer = Color(0xFFF3EFFC),
         tertiary = palette.tertiary,
-        onTertiary = Color(0xFF2E0A20),
+        onTertiary = Color(0xFF1B0A2E),
         tertiaryContainer = palette.tertiary.copy(alpha = 0.2f),
-        onTertiaryContainer = Color(0xFFFFE4F1),
+        onTertiaryContainer = Color(0xFFEFE7FF),
         background = palette.inkBottom,
         onBackground = palette.textHigh,
-        surface = Color(0xFF0A0C1C),
+        surface = Color(0xFF0D0918),
         onSurface = palette.textHigh,
-        surfaceVariant = Color(0xFF151833),
+        surfaceVariant = Color(0xFF1A1430),
         onSurfaceVariant = palette.textMid,
-        surfaceContainerHighest = Color(0xFF1B1F3D),
-        surfaceContainerHigh = Color(0xFF161A35),
-        surfaceContainer = Color(0xFF12152C),
-        surfaceContainerLow = Color(0xFF0E1124),
-        surfaceContainerLowest = Color(0xFF07091A),
-        outline = Color(0xFF39406B),
+        surfaceContainerHighest = Color(0xFF221A3E),
+        surfaceContainerHigh = Color(0xFF1B1534),
+        surfaceContainer = Color(0xFF151027),
+        surfaceContainerLow = Color(0xFF100C1E),
+        surfaceContainerLowest = Color(0xFF080611),
+        outline = Color(0xFF443A6E),
         outlineVariant = palette.glassStrokeSoft,
         error = palette.danger,
         onError = Color.White,

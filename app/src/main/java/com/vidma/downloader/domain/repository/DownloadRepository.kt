@@ -1,6 +1,7 @@
 package com.vidma.downloader.domain.repository
 
 import com.vidma.downloader.domain.model.DownloadTask
+import com.vidma.downloader.domain.model.EngineStatus
 import com.vidma.downloader.domain.model.LibraryItem
 import com.vidma.downloader.domain.model.MediaKind
 import com.vidma.downloader.domain.model.MediaSummary
@@ -13,6 +14,9 @@ import kotlinx.coroutines.flow.Flow
 interface DownloadRepository {
 
     val engineReady: Flow<Boolean>
+
+    /** Full engine lifecycle (unpacking → ready / failed) for honest UI feedback. */
+    val engineStatus: Flow<EngineStatus>
 
     /** Live task list, newest first. */
     val tasks: Flow<List<DownloadTask>>
@@ -27,6 +31,10 @@ interface DownloadRepository {
      * Fire-and-forget: queue a task and run it. Returns its id.
      * [title]/[coverUrl]/[durationSec] pre-fill the task when the caller
      * already fetched metadata (optional).
+     *
+     * [directSource] marks [url] as a plain media file captured from a web
+     * page: it skips the yt-dlp extractor entirely and streams straight
+     * through OkHttp (works on any site, real progress).
      */
     fun startDownload(
         url: String,
@@ -38,6 +46,7 @@ interface DownloadRepository {
         title: String? = null,
         coverUrl: String? = null,
         durationSec: Int = 0,
+        directSource: Boolean = false,
     ): String
 
     fun cancelTask(id: String)
