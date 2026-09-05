@@ -55,7 +55,12 @@ object YtDlpEngine {
             } catch (error: Throwable) {
                 initialized = false
                 _ready.value = false
-                _lastInitError.value = (error.message ?: error.javaClass.simpleName).take(240)
+                // Surface the *root* cause, not just the wrapper message. The
+                // youtubedl init wraps the real error (e.g. a stripped
+                // raw/ytdlp resource or missing native lib) as "failed to
+                // initialize", which alone is useless for debugging.
+                _lastInitError.value = describeThrowable(error)
+                android.util.Log.e("VidmaEngine", "yt-dlp engine init failed", error)
                 throw error
             }
         }
@@ -70,6 +75,21 @@ object YtDlpEngine {
 
     /** True when the underlying binaries finished unpacking. */
     fun isInitialized(): Boolean = initialized
+
+    /** Builds a short, diagnostic description walking the whole cause chain. */
+    private fun describeThrowable(error: Throwable): String {
+        val parts = ArrayList<String>()
+        var current: Throwable? = error
+        var depth = 0
+        while (current != null && depth < 4) {
+            val msg = current.message?.takeIf { it.isNotBlank() }
+                ?: current.javaClass.simpleName
+            if (parts.isEmpty() || parts.last() != msg) parts.add(msg)
+            current = current.cause
+            depth++
+        }
+        return parts.joinToString(" → ").take(240)
+    }
 
     /**
      * Resolve metadata for a single URL. Runs the real yt-dlp --dump-json

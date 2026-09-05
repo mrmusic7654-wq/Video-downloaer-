@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.vidma.downloader.VidmaApp
+import com.vidma.downloader.data.engine.DirectHttpEngine
 import com.vidma.downloader.data.engine.YtDlpEngine
 import com.vidma.downloader.domain.model.AudioFormatPref
 import com.vidma.downloader.domain.model.ContainerPref
@@ -57,6 +58,10 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
     val ffmpegReady: StateFlow<Boolean> = YtDlpEngine.ffmpegReady
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
+    /** Last engine-init failure, if any (surfaced in the engine-status card). */
+    val engineError: StateFlow<String?> = YtDlpEngine.lastInitError
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
     val accent: StateFlow<AccentPreset> = appContainer.prefs.accentFlow
         .stateIn(viewModelScope, SharingStarted.Eagerly, AccentPreset.Aurora)
 
@@ -79,6 +84,10 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
 
     private val _container = MutableStateFlow(ContainerPref.Mp4)
     val container: StateFlow<ContainerPref> = _container.asStateFlow()
+
+    /** When true (and kind == Video), grab the video stream only, no audio. */
+    private val _videoOnly = MutableStateFlow(false)
+    val videoOnly: StateFlow<Boolean> = _videoOnly.asStateFlow()
 
     private val _fetchPhase = MutableStateFlow<FetchPhase>(FetchPhase.Idle)
     val fetchPhase: StateFlow<FetchPhase> = _fetchPhase.asStateFlow()
@@ -122,6 +131,10 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         _container.value = pref
     }
 
+    fun onVideoOnlyChange(enabled: Boolean) {
+        _videoOnly.value = enabled
+    }
+
     fun clearUrl() {
         _urlText.value = ""
         _fetchPhase.value = FetchPhase.Idle
@@ -163,6 +176,11 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         // fetchMediaInfo initializes the engine on IO and the loading card
         // gives immediate feedback instead of forcing a second tap.
         _urlText.value = url
+        resolveMedia(url)
+    }
+
+    /** Resolve metadata for [url] and surface the result in [fetchPhase]. */
+    private fun resolveMedia(url: String) {
         _fetchPhase.value = FetchPhase.Fetching
         fetchJob?.cancel()
         fetchJob = viewModelScope.launch {
@@ -180,6 +198,36 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    /**
+     * Resolve for the browser flow, but fall back to a direct download for URLs
+     * yt-dlp can't "resolve" (a raw CDN .mp4/.webm file). Such files are still
+     * perfectly downloadable via the narrow OkHttp path, so the browser never
+     * quietly dead-ends on them.
+     */
+    private fun resolveForBrowser(url: String, title: String?) {
+        _fetchPhase.value = FetchPhase.Fetching
+        fetchJob?.cancel()
+        fetchJob = viewModelScope.launch {
+            val result = repo.fetchMediaInfo(url)
+            _fetchPhase.value = result.fold(
+                onSuccess = {
+                    readySummary = it
+                    FetchPhase.Ready(it)
+                },
+                onFailure = { error ->
+                    if (DirectHttpEngine.canHandle(url)) {
+                        readySummary = null
+                        startUrlDirect(url, MediaKind.Video, "Direct media", title, null)
+                        FetchPhase.Idle
+                    } else {
+                        readySummary = null
+                        FetchPhase.Error(userMessageFor(error))
+                    }
+                },
+            )
+        }
+    }
+
     // ---------------- download actions ----------------
 
     fun startDownload() {
@@ -188,31 +236,60 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
             return
         }
         val k = _kind.value
-        val label = if (k == MediaKind.Audio && !ffmpegReady.value) {
-            "Source audio"
-        } else {
-            FormatRules.requestLabel(k, _quality.value, _container.value, _audioFormat.value)
+        val videoOnly = k == MediaKind.Video && _videoOnly.value
+        val label = when {
+            k == MediaKind.Audio && !ffmpegReady.value -> "Source audio"
+            k == MediaKind.Audio -> FormatRules.requestLabel(k, _quality.value, _container.value, _audioFormat.value)
+            videoOnly -> {
+                val base = if (_quality.value == QualityPreset.Auto) "Best" else "${_quality.value.height}p"
+                "$base · video only"
+            }
+            else -> FormatRules.requestLabel(k, _quality.value, _container.value, _audioFormat.value)
         }
         repo.startDownload(
             url = summary.url,
             kind = k,
             selector = if (k == MediaKind.Video) {
-                FormatRules.videoSelector(_quality.value.height)
+                if (videoOnly) FormatRules.videoOnlySelector(_quality.value.height)
+                else FormatRules.videoSelector(_quality.value.height)
             } else null,
             audioFormat = if (k == MediaKind.Audio) _audioFormat.value.ytArg else null,
-            containerExt = _container.value.ext.takeIf { k == MediaKind.Video },
+            containerExt = _container.value.ext.takeIf { k == MediaKind.Video && !videoOnly },
             requestLabel = label,
             title = summary.title,
             coverUrl = summary.thumbnailUrl,
             durationSec = summary.durationSec,
+            videoOnly = videoOnly,
         )
-        _transient.value = if (k == MediaKind.Video) {
+        _transient.value = if (videoOnly) {
+            "Downloading video only — “${summary.title.take(48)}”…"
+        } else if (k == MediaKind.Video) {
             "Downloading “${summary.title.take(48)}”…"
         } else {
             "Extracting ${_audioFormat.value.label} audio…"
         }
     }
 
+    /**
+     * Route a page (from the browser's "download this page" action) into the
+     * same format studio as a pasted link. Instead of silently queueing a
+     * generic mp4 — which offered no Video/Audio, quality or container choice
+     * and frequently never showed progress — this resolves the page's metadata
+     * and lets the user pick exactly what to save. The actual download then
+     * starts only when they tap Download.
+     */
+    fun prepareDownload(rawUrl: String, title: String?) {
+        val url = normalizeUrl(rawUrl) ?: run {
+            _transient.value = "That doesn't look like a downloadable page."
+            return
+        }
+        _lastSharedUrl.value = null
+        _urlText.value = url
+        readySummary = null
+        resolveForBrowser(url, title)
+    }
+
+    /** Start the browser-page download directly (kept for quick one-tap flows). */
     fun startUrlDirect(url: String, kind: MediaKind, requestLabel: String, title: String?, cover: String?) {
         repo.startDownload(
             url = url,
@@ -269,7 +346,14 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
     fun retryEngine() {
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { YtDlpEngine.initialize(getApplication()) }
-                .onFailure { _transient.value = "Engine failed: ${it.message?.take(80)}" }
+                .onFailure {
+                    // Prefer the engine's own (cause-chain) description over the
+                    // top-level message, which is often just "failed to initialize".
+                    val detail = YtDlpEngine.lastInitError.value
+                        ?: it.message
+                        ?: it.javaClass.simpleName
+                    _transient.value = "Engine failed: ${detail?.take(140)}"
+                }
         }
     }
 

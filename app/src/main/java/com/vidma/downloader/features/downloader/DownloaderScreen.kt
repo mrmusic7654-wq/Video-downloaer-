@@ -105,10 +105,12 @@ fun DownloaderScreen(
     val quality by vm.quality.collectAsStateV()
     val audioFormat by vm.audioFormat.collectAsStateV()
     val container by vm.container.collectAsStateV()
+    val videoOnly by vm.videoOnly.collectAsStateV()
     val fetchPhase by vm.fetchPhase.collectAsStateV()
     val downloads by vm.downloads.collectAsStateV()
     val library by vm.library.collectAsStateV()
     val engineReady by vm.engineReady.collectAsStateV()
+    val engineError by vm.engineError.collectAsStateV()
     val ffmpegReady by vm.ffmpegReady.collectAsStateV()
     val sharedUrl by vm.lastSharedUrl.collectAsStateV()
 
@@ -284,7 +286,7 @@ fun DownloaderScreen(
                 ErrorBanner(message = phase.message, palette = palette)
             }
             is FetchPhase.Fetching -> item {
-                ResolvingCard(url = urlText, palette = palette)
+                ResolvingCard(url = urlText, engineReady = engineReady, palette = palette)
             }
             is FetchPhase.Ready -> item {
                 MediaStudio(
@@ -293,12 +295,14 @@ fun DownloaderScreen(
                     quality = quality,
                     audioFormat = audioFormat,
                     container = container,
+                    videoOnly = videoOnly,
                     engineReady = engineReady,
                     ffmpegReady = ffmpegReady,
                     onKind = { vm.onKindChange(it) },
                     onQuality = { vm.onQualityChange(it) },
                     onAudio = { vm.onAudioChange(it) },
                     onContainer = { vm.onContainerChange(it) },
+                    onVideoOnly = vm::onVideoOnlyChange,
                     onDownload = vm::startDownload,
                     palette = palette,
                 )
@@ -365,7 +369,7 @@ fun DownloaderScreen(
             }
         } else {
             item {
-                EngineStartingCard(palette = palette, onRetry = vm::retryEngine)
+                EngineStartingCard(error = engineError, palette = palette, onRetry = vm::retryEngine)
             }
         }
 
@@ -485,21 +489,26 @@ private fun ErrorBanner(message: String, palette: VidmaPalette) {
 }
 
 @Composable
-private fun ResolvingCard(url: String, palette: VidmaPalette) {
+private fun ResolvingCard(url: String, engineReady: Boolean, palette: VidmaPalette) {
     GlassCard(contentPadding = PaddingValues(18.dp), glowing = true) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             AuroraRing(size = 26.dp, palette = palette)
             Spacer(Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Scanning & extracting metadata…",
+                    // First run unpacks the Python/yt-dlp runtime, which can take
+                    // a while — tell the user that's what is happening instead of
+                    // implying the URL is stuck.
+                    text = if (engineReady) "Scanning & extracting metadata…"
+                    else "Preparing the download engine (first run)…",
                     style = MaterialTheme.typography.titleSmall.copy(color = VidmaBase.TextHigh),
                 )
-                Spacer(Modifier.height(2.dp))
+                Spacer(Modifier.height(3.dp))
                 Text(
-                    text = url.take(90),
+                    text = if (engineReady) url.take(90)
+                    else "This happens only once. The video is read after the engine is warm.",
                     style = MaterialTheme.typography.labelSmall.copy(color = VidmaBase.TextLow),
-                    maxLines = 1,
+                    maxLines = if (engineReady) 1 else 2,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -508,24 +517,30 @@ private fun ResolvingCard(url: String, palette: VidmaPalette) {
 }
 
 @Composable
-private fun EngineStartingCard(palette: VidmaPalette, onRetry: () -> Unit) {
+private fun EngineStartingCard(error: String?, palette: VidmaPalette, onRetry: () -> Unit) {
     GlassCard(contentPadding = PaddingValues(20.dp)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
             AuroraRing(size = 34.dp, palette = palette)
             Spacer(Modifier.height(14.dp))
             Text(
-                text = "Preparing the download engine",
-                style = MaterialTheme.typography.titleSmall.copy(color = VidmaBase.TextHigh),
+                text = if (error == null) "Preparing the download engine" else "Engine needs attention",
+                style = MaterialTheme.typography.titleSmall.copy(color = if (error == null) VidmaBase.TextHigh else palette.danger),
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "First launch prepares the lightweight yt-dlp runtime. Full builds can add FFmpeg for merging and audio conversion.",
+                text = if (error == null) {
+                    "First launch prepares the lightweight yt-dlp runtime. Full builds can add FFmpeg for merging and audio conversion."
+                } else {
+                    error
+                },
                 style = MaterialTheme.typography.bodySmall.copy(color = VidmaBase.TextMid),
                 textAlign = TextAlign.Center,
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(10.dp))
             Text(
-                text = "Tap to retry",
+                text = if (error == null) "Preparing…" else "Tap to retry",
                 style = MaterialTheme.typography.labelSmall.copy(color = palette.secondary),
                 modifier = Modifier.clickable(onClick = onRetry),
             )
@@ -544,12 +559,14 @@ private fun MediaStudio(
     quality: com.vidma.downloader.domain.model.QualityPreset,
     audioFormat: AudioFormatPref,
     container: ContainerPref,
+    videoOnly: Boolean,
     engineReady: Boolean,
     ffmpegReady: Boolean,
     onKind: (MediaKind) -> Unit,
     onQuality: (com.vidma.downloader.domain.model.QualityPreset) -> Unit,
     onAudio: (AudioFormatPref) -> Unit,
     onContainer: (ContainerPref) -> Unit,
+    onVideoOnly: (Boolean) -> Unit,
     onDownload: () -> Unit,
     palette: VidmaPalette,
 ) {
@@ -609,13 +626,18 @@ private fun MediaStudio(
                     onSelect = { i -> onKind(if (i == 0) MediaKind.Video else MediaKind.Audio) },
                 )
                 if (kind == MediaKind.Video) {
-                    QualityStudio(quality, container, summary, ffmpegReady, onQuality, onContainer, palette)
+                    QualityStudio(quality, container, summary, videoOnly, ffmpegReady, onQuality, onContainer, onVideoOnly, palette)
                 } else {
                     AudioStudio(audioFormat, ffmpegReady, onAudio, palette)
                 }
                 VidmaButton(
                     text = when {
                         !engineReady -> "Engine starting…"
+                        kind == MediaKind.Video && videoOnly -> buildString {
+                            append("Download")
+                            if (quality.height != null) append(" ${quality.height}p")
+                            append("  ·  video only")
+                        }
                         kind == MediaKind.Video -> buildString {
                             append("Download")
                             if (quality.height != null) append(" ${quality.height}p")
@@ -639,9 +661,11 @@ private fun QualityStudio(
     quality: com.vidma.downloader.domain.model.QualityPreset,
     container: ContainerPref,
     summary: MediaSummary,
+    videoOnly: Boolean,
     ffmpegReady: Boolean,
     onQuality: (com.vidma.downloader.domain.model.QualityPreset) -> Unit,
     onContainer: (ContainerPref) -> Unit,
+    onVideoOnly: (Boolean) -> Unit,
     palette: VidmaPalette,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -667,23 +691,46 @@ private fun QualityStudio(
             }
         }
         Spacer(Modifier.height(4.dp))
+        // Video + audio vs video-only stream. Video-only needs no remuxing,
+        // so the container row is hidden when it is selected.
         Text(
-            text = if (ffmpegReady) "CONTAINER" else "DIRECT OUTPUT",
+            text = "OUTPUT",
             style = MaterialTheme.typography.labelSmall.copy(color = VidmaBase.TextLow),
         )
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            val containerChoices = if (ffmpegReady) {
-                ContainerPref.entries.toList()
-            } else {
-                listOf(ContainerPref.Mp4)
-            }
-            items(containerChoices) { c ->
-                VidmaChoiceChip(
-                    text = c.label,
-                    selected = container == c,
-                    onClick = { onContainer(c) },
-                    palette = palette,
-                )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            VidmaChoiceChip(
+                text = "Video + audio",
+                selected = !videoOnly,
+                onClick = { onVideoOnly(false) },
+                palette = palette,
+            )
+            VidmaChoiceChip(
+                text = "Video only",
+                selected = videoOnly,
+                onClick = { onVideoOnly(true) },
+                palette = palette,
+            )
+        }
+        if (!videoOnly) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = if (ffmpegReady) "CONTAINER" else "DIRECT OUTPUT",
+                style = MaterialTheme.typography.labelSmall.copy(color = VidmaBase.TextLow),
+            )
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val containerChoices = if (ffmpegReady) {
+                    ContainerPref.entries.toList()
+                } else {
+                    listOf(ContainerPref.Mp4)
+                }
+                items(containerChoices) { c ->
+                    VidmaChoiceChip(
+                        text = c.label,
+                        selected = container == c,
+                        onClick = { onContainer(c) },
+                        palette = palette,
+                    )
+                }
             }
         }
     }

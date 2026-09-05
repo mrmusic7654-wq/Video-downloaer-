@@ -61,6 +61,19 @@ object FormatRules {
     /** Source audio selector used when no post-processor is available. */
     const val sourceAudioSelector: String = "bestaudio[ext=m4a]/bestaudio/best"
 
+    /**
+     * Video-stream-only selector (no audio track). Prefers the best video up to
+     * [height], falling back to any best video so a site that only serves
+     * combined streams still works. No merging is needed, so it works with or
+     * without FFmpeg.
+     */
+    fun videoOnlySelector(height: Int?): String =
+        if (height == null) {
+            "bestvideo/best"
+        } else {
+            "bestvideo[height<=$height]/bestvideo/best"
+        }
+
     /** Short human label stored on the task, e.g. "1080p · mp4" / "MP3 audio". */
     fun requestLabel(
         kind: MediaKind,

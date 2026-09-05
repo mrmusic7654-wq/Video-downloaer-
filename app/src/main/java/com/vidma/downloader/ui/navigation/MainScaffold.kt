@@ -128,7 +128,16 @@ fun MainScaffold(
                     LibraryScreen(vm = downloaderVm)
                 }
                 composable(VidmaTab.Browser.route) {
-                    BrowserScreen(browserVm = browserVm, downloaderVm = downloaderVm)
+                    BrowserScreen(
+                        browserVm = browserVm,
+                        onSetupDownload = { url, title ->
+                            // Bring the page into the Home format studio: resolve
+                            // its metadata first so the user can pick Video/Audio,
+                            // quality and container before downloading.
+                            downloaderVm.prepareDownload(url, title)
+                            navController.navigateTo(VidmaTab.Home)
+                        },
+                    )
                 }
                 composable("downloads") {
                     DownloadProgressScreen(
