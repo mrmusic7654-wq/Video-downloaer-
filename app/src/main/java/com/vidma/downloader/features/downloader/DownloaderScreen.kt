@@ -2,8 +2,6 @@ package com.vidma.downloader.features.downloader
 
 import com.vidma.downloader.ui.components.core.VidmaIcons
 import androidx.compose.material.icons.rounded.Warning
-import androidx.compose.material.icons.rounded.Public
-import androidx.compose.material.icons.rounded.ContentPaste
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -31,7 +29,6 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -195,7 +192,7 @@ fun DownloaderScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
-                                imageVector = Icons.Rounded.Public,
+                                imageVector = VidmaIcons.Public,
                                 contentDescription = null,
                                 tint = palette.secondary,
                                 modifier = Modifier.requiredSize(17.dp),
@@ -230,7 +227,7 @@ fun DownloaderScreen(
                                     )
                                 } else {
                                     VidmaIconButton(
-                                        icon = Icons.Rounded.ContentPaste,
+                                        icon = VidmaIcons.ContentPaste,
                                         contentDescription = "Paste",
                                         onClick = {
                                             val clip = clipboard.getText()?.text
@@ -297,7 +294,7 @@ fun DownloaderScreen(
                                     )
                                 } else {
                                     VidmaIconButton(
-                                        icon = Icons.Rounded.ContentPaste,
+                                        icon = VidmaIcons.ContentPaste,
                                         contentDescription = "Paste",
                                         onClick = {
                                             val clip = clipboard.getText()?.text
@@ -804,7 +801,7 @@ private fun MediaStudio(
                     )
                     VidmaGlassButton(
                         text = "Files",
-                        icon = Icons.Rounded.Tune,
+                        icon = VidmaIcons.Tune,
                         onClick = onOpenFormats,
                         height = 54.dp,
                         corner = 18.dp,
@@ -1174,8 +1171,16 @@ private fun FormatRow(
                     .requiredSize(56.dp)
                     .clip(RoundedCornerShape(14.dp))
                     .background(
-                        if (cover != null) Color.Transparent
-                        else Brush.linearGradient(listOf(palette.tertiary.copy(alpha = 0.4f), palette.primary.copy(alpha = 0.3f)))
+                        Brush.linearGradient(
+                            colors = if (cover != null) {
+                                listOf(Color.Transparent, Color.Transparent)
+                            } else {
+                                listOf(
+                                    palette.tertiary.copy(alpha = 0.4f),
+                                    palette.primary.copy(alpha = 0.3f),
+                                )
+                            }
+                        )
                     ),
                 contentAlignment = Alignment.Center,
             ) {

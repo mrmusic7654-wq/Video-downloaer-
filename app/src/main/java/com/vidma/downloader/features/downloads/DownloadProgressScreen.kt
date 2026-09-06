@@ -2,7 +2,6 @@ package com.vidma.downloader.features.downloads
 
 import com.vidma.downloader.ui.components.core.VidmaIcons
 import androidx.compose.material.icons.rounded.MoreVert
-import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Delete
@@ -180,7 +179,7 @@ fun DownloadProgressScreen(
                             onDismissRequest = { menuOpen = false },
                         ) {
                             BulkAction(
-                                icon = Icons.Rounded.Pause,
+                                icon = VidmaIcons.Pause,
                                 text = "Pause all",
                                 enabled = hasActive,
                                 onClick = {
