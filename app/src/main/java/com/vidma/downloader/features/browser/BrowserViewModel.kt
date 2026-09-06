@@ -60,6 +60,21 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     var canGoForward by mutableStateOf(false)
         private set
 
+    /** State for media parsing when download FAB is tapped. */
+    sealed interface ParseState {
+        data object Idle : ParseState
+        data object Parsing : ParseState
+        data class Ready(val summary: MediaSummary) : ParseState
+        data class Error(val message: String) : ParseState
+    }
+
+    private val _parseState = mutableStateOf<ParseState>(ParseState.Idle)
+    val parseState: ParseState get() = _parseState.value
+
+    fun setParseState(state: ParseState) {
+        _parseState.value = state
+    }
+
     val fabPosition: StateFlow<FabPosition> = prefs.downloadFabPositionFlow
         .stateIn(viewModelScope, SharingStarted.Eagerly, FabPosition())
 
