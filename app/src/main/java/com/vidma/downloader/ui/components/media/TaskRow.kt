@@ -2,7 +2,6 @@ package com.vidma.downloader.ui.components.media
 
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -37,6 +36,7 @@ import com.vidma.downloader.ui.components.core.GlassCard
 import com.vidma.downloader.ui.components.core.GlowDot
 import com.vidma.downloader.ui.components.core.GlowProgressArc
 import com.vidma.downloader.ui.components.core.StatusPill
+import com.vidma.downloader.ui.components.core.VidmaIcons
 import com.vidma.downloader.ui.theme.LocalVidmaPalette
 import com.vidma.downloader.ui.theme.VidmaBase
 import com.vidma.downloader.ui.theme.VidmaPalette
@@ -272,7 +272,7 @@ fun TaskRow(
             when {
                 task.isActive -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (onPause != null) {
-                        TrailingAction(onClick = { onPause(task.id) }, icon = Icons.Rounded.Pause, tint = palette.secondary)
+                        TrailingAction(onClick = { onPause(task.id) }, icon = VidmaIcons.Pause, tint = palette.secondary)
                     }
                     TrailingAction(onClick = { onCancel(task.id) }, icon = Icons.Rounded.Close, tint = palette.danger)
                 }
