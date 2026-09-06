@@ -196,6 +196,7 @@ data class MediaFormat(
     val sizeBytes: Long = 0,
     /** "video" / "audio" / "video+audio" — used to render the row icon. */
     val mediaType: String = "video+audio",
+) {
     /** True if the format is audio-only (no video stream). */
     val isAudioOnly: Boolean get() = kind == MediaKind.Audio
 }
