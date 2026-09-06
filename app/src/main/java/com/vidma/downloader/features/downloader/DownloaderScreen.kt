@@ -80,12 +80,12 @@ import com.vidma.downloader.ui.components.core.VidmaChoiceChip
 import com.vidma.downloader.ui.components.core.VidmaGlassButton
 import com.vidma.downloader.ui.components.core.VidmaIconButton
 import com.vidma.downloader.ui.components.core.VidmaModeToggle
+import com.vidma.downloader.ui.components.media.MediaFormatRow
 import com.vidma.downloader.ui.components.media.MediaSquare
 import com.vidma.downloader.ui.components.media.TaskRow
 import com.vidma.downloader.ui.theme.LocalVidmaPalette
 import com.vidma.downloader.ui.theme.VidmaBase
 import com.vidma.downloader.ui.theme.VidmaPalette
-import com.vidma.downloader.util.formatBytes
 import com.vidma.downloader.util.formatCount
 import com.vidma.downloader.util.formatDuration
 import com.vidma.downloader.util.hostOf
@@ -128,9 +128,45 @@ fun DownloaderScreen(
 
     var playItem by remember { mutableStateOf<LibraryItem?>(null) }
     var showFormats by remember { mutableStateOf(false) }
+    // Clipboard hint — recomputed when the fields empty out / window regains
+    // focus, so a freshly copied link appears without a manual paste.
+    var clipOffer by remember { mutableStateOf<String?>(null) }
+    val refreshClipOffer = {
+        val c = clipboard.getText()?.text?.trim()
+        clipOffer = c?.takeIf { it.length in 5..500 && com.vidma.downloader.util.looksLikeUrl(it) }
+        Unit
+    }
+    LaunchedEffect(Unit) { refreshClipOffer() }
+    // Refresh the "tap to paste" hint every time the app comes back to the
+    // foreground — the user just copied a link in YouTube/TikTok/etc.
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val listener = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) refreshClipOffer()
+        }
+        lifecycleOwner.lifecycle.addObserver(listener)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(listener) }
+    }
 
     LaunchedEffect(sharedUrl) {
         if (sharedUrl != null) vm.adoptSharedUrl()
+    }
+
+    // Auto-resolve: when a complete link lands in the link bar (paste,
+    // share or typed-and-idle), parse it automatically — no extra tap on
+    // "Resolve link". Debounced so typing stays smooth; guards in the VM
+    // prevent re-resolving an already-resolved URL.
+    LaunchedEffect(urlText) {
+        clipOffer = null
+        val candidate = urlText.trim()
+        if (candidate.length < 8) return@LaunchedEffect
+        val normalized = com.vidma.downloader.util.normalizeUrl(candidate) ?: return@LaunchedEffect
+        if (normalized.contains(" ") || !normalized.substringAfter("://").contains(".")) return@LaunchedEffect
+        val phase = fetchPhase
+        if (phase is FetchPhase.Ready && phase.summary.url == normalized) return@LaunchedEffect
+        if (phase is FetchPhase.Fetching) return@LaunchedEffect
+        kotlinx.coroutines.delay(650)
+        if (urlText.trim() == candidate) vm.fetch()
     }
 
     LazyColumn(
@@ -251,6 +287,18 @@ fun DownloaderScreen(
                                 onGo = { vm.onSearchSubmit() },
                             ),
                         )
+                        // Pasted a link? Offer to open it in the browser.
+                        if (searchText.isEmpty() && clipOffer != null) {
+                            PasteLinkHint(
+                                text = clipOffer!!,
+                                palette = palette,
+                                onPaste = {
+                                    vm.onSearchChange(clipOffer!!)
+                                    vm.onSearchSubmit()
+                                    clipOffer = null
+                                },
+                            )
+                        }
                     }
                 }
 
@@ -318,6 +366,19 @@ fun DownloaderScreen(
                                 onGo = { vm.fetch() },
                             ),
                         )
+                        // One-tap paste hint while the field is empty.
+                        if (urlText.isEmpty() && clipOffer != null && sharedUrl == null) {
+                            PasteLinkHint(
+                                text = clipOffer!!,
+                                palette = palette,
+                                onPaste = {
+                                    val link = clipOffer!!
+                                    clipOffer = null
+                                    vm.onUrlChange(link)
+                                    vm.fetch()
+                                },
+                            )
+                        }
                         // share chip (URL sent into vidma from another app)
                         if (sharedUrl != null) {
                             GlassCard(
@@ -493,6 +554,61 @@ fun DownloaderScreen(
 /** Tiny helper so screens read flows lifecycle-aware. */
 @Composable
 private fun <T> StateFlow<T>.collectAsStateV(): State<T> = collectAsStateWithLifecycle()
+
+/**
+ * One-tap "paste the link that's on your clipboard" hint shown under a
+ * field while it's empty. Removes the long-press dance and makes the
+ * primary action discoverable.
+ */
+@Composable
+private fun PasteLinkHint(
+    text: String,
+    onPaste: () -> Unit,
+    palette: VidmaPalette,
+) {
+    val host = hostOf(text).ifBlank { text.take(28) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(
+                Brush.linearGradient(
+                    listOf(palette.secondary.copy(alpha = 0.16f), palette.primary.copy(alpha = 0.10f)),
+                ),
+            )
+            .clickable(onClick = onPaste)
+            .padding(horizontal = 14.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(
+            imageVector = VidmaIcons.ContentPaste,
+            contentDescription = null,
+            tint = palette.secondary,
+            modifier = Modifier.requiredSize(17.dp),
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Link copied — tap to paste",
+                style = MaterialTheme.typography.labelMedium.copy(color = VidmaBase.TextHigh),
+                maxLines = 1,
+            )
+            Spacer(Modifier.height(1.dp))
+            Text(
+                text = host,
+                style = MaterialTheme.typography.labelSmall.copy(color = VidmaBase.TextLow),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Icon(
+            imageVector = Icons.Rounded.ArrowForward,
+            contentDescription = null,
+            tint = palette.secondary,
+            modifier = Modifier.requiredSize(16.dp),
+        )
+    }
+}
 
 @Composable
 private fun BrandHeader(
@@ -1090,7 +1206,7 @@ private fun FormatsSheet(
                     if (videos.isNotEmpty()) {
                         item { SectionTitle(text = "Video") }
                         items(videos, key = { "v-${it.id}" }) { format ->
-                            FormatRow(
+                            MediaFormatRow(
                                 format = format,
                                 cover = summary.thumbnailUrl,
                                 enabled = engineReady,
@@ -1103,7 +1219,7 @@ private fun FormatsSheet(
                         item { Spacer(Modifier.height(4.dp)) }
                         item { SectionTitle(text = "Audio") }
                         items(audios, key = { "a-${it.id}" }) { format ->
-                            FormatRow(
+                            MediaFormatRow(
                                 format = format,
                                 cover = summary.thumbnailUrl,
                                 enabled = engineReady,
@@ -1116,7 +1232,7 @@ private fun FormatsSheet(
                         item { Spacer(Modifier.height(4.dp)) }
                         item { SectionTitle(text = "Subtitles") }
                         items(subtitles, key = { "s-${it.id}" }) { format ->
-                            FormatRow(
+                            MediaFormatRow(
                                 format = format,
                                 cover = summary.thumbnailUrl,
                                 enabled = engineReady,
@@ -1138,114 +1254,6 @@ private fun FormatsSheet(
                         }
                     }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun FormatRow(
-    format: MediaFormat,
-    cover: String?,
-    enabled: Boolean,
-    onClick: () -> Unit,
-    palette: VidmaPalette,
-) {
-    val secondaryText = buildList {
-        format.vcodec?.let { add(it.uppercase()) }
-        format.acodec?.let { add(it.uppercase()) }
-        if (format.fps > 0) add("${format.fps} fps")
-        add(format.ext.uppercase())
-    }.joinToString(" · ")
-
-    GlassCard(
-        onClick = onClick,
-        enabled = enabled,
-        shape = RoundedCornerShape(20.dp),
-        contentPadding = PaddingValues(12.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            // small cover or icon tile
-            Box(
-                modifier = Modifier
-                    .requiredSize(56.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(
-                        Brush.linearGradient(
-                            colors = if (cover != null) {
-                                listOf(Color.Transparent, Color.Transparent)
-                            } else {
-                                listOf(
-                                    palette.tertiary.copy(alpha = 0.4f),
-                                    palette.primary.copy(alpha = 0.3f),
-                                )
-                            }
-                        )
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                MediaSquare(
-                    kind = format.kind,
-                    cover = cover,
-                    size = 56.dp,
-                    corner = 14.dp,
-                    palette = palette,
-                )
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = format.label,
-                        style = MaterialTheme.typography.titleSmall.copy(color = VidmaBase.TextHigh),
-                    )
-                    if (format.mediaType == "video") {
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            text = "video-only",
-                            style = MaterialTheme.typography.labelSmall.copy(color = palette.warning),
-                        )
-                    }
-                }
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = if (secondaryText.isNotBlank()) secondaryText else format.ext.uppercase(),
-                    style = MaterialTheme.typography.labelSmall.copy(color = VidmaBase.TextLow),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (format.sizeBytes > 0) {
-                        StatusPill(
-                            text = formatBytes(format.sizeBytes),
-                            dotColor = palette.secondary,
-                        )
-                    } else {
-                        Text(
-                            text = "size unknown",
-                            style = MaterialTheme.typography.labelSmall.copy(color = VidmaBase.TextLow),
-                        )
-                    }
-                }
-            }
-            Spacer(Modifier.width(8.dp))
-            Box(
-                modifier = Modifier
-                    .requiredSize(40.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (enabled) Brush.linearGradient(listOf(palette.secondary, palette.primary, palette.tertiary))
-                        else Brush.linearGradient(listOf(Color(0xFF2A2E46), Color(0xFF20243B)))
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = VidmaIcons.Download,
-                    contentDescription = "Download",
-                    tint = if (enabled) Color.White else VidmaBase.TextLow,
-                    modifier = Modifier.requiredSize(18.dp),
-                )
             }
         }
     }
