@@ -22,10 +22,13 @@ import androidx.lifecycle.viewModelScope
 import com.vidma.downloader.VidmaApp
 import com.vidma.downloader.domain.model.FabPosition
 import com.vidma.downloader.domain.model.MediaKind
+import com.vidma.downloader.domain.model.MediaSummary
 import com.vidma.downloader.domain.model.PageMediaSource
 import com.vidma.downloader.util.hostOf
+import com.vidma.downloader.util.isWebPageUrl
 import com.vidma.downloader.util.normalizeUrl
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -37,6 +40,24 @@ import java.net.URLEncoder
 import kotlin.coroutines.resume
 
 /**
+ * Lifecycle of resolving the *current page* through the engine when the
+ * floating download action is tapped. The flow is deliberately
+ * parse-first: [Parsing] drives the FAB animation, and only [Ready] (which
+ * carries thumbnail / title / every available file) opens the save sheet.
+ */
+sealed interface PageParseState {
+    /** Nothing parsed for the current page yet — the FAB is a plain button. */
+    data object Idle : PageParseState
+    /** yt-dlp is reading the page — the FAB shows a spinning ring. */
+    data object Parsing : PageParseState
+    /** Done: the sheet may open with thumbnail, title, formats and sizes. */
+    data class Ready(val summary: MediaSummary) : PageParseState
+    /** Resolve failed — the FAB becomes a retry; tapping still opens the
+     *  fallback sheet (direct file captured from the page). */
+    data class Error(val message: String) : PageParseState
+}
+
+/**
  * Owns the single, process-lifetime WebView and all browser chrome state.
  * Android's WebView provider is Chromium-based, so this uses the device's
  * maintained Chromium runtime instead of embedding a second browser in the
@@ -44,7 +65,9 @@ import kotlin.coroutines.resume
  */
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val prefs = (application as VidmaApp).container.prefs
+    private val container = (application as VidmaApp).container
+    private val prefs = container.prefs
+    private val repository get() = container.repository
 
     var addressText by mutableStateOf("")
     var currentUrl by mutableStateOf("")
@@ -60,20 +83,12 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     var canGoForward by mutableStateOf(false)
         private set
 
-    /** State for media parsing when download FAB is tapped. */
-    sealed interface ParseState {
-        data object Idle : ParseState
-        data object Parsing : ParseState
-        data class Ready(val summary: MediaSummary) : ParseState
-        data class Error(val message: String) : ParseState
-    }
+    /** Page resolution state observed by the browser screen (drives the FAB). */
+    var pageParseState by mutableStateOf<PageParseState>(PageParseState.Idle)
+        private set
 
-    private val _parseState = mutableStateOf<ParseState>(ParseState.Idle)
-    val parseState: ParseState get() = _parseState.value
-
-    fun setParseState(state: ParseState) {
-        _parseState.value = state
-    }
+    /** Resolve job for the current page; cancelled when the page changes. */
+    private var resolveJob: Job? = null
 
     val fabPosition: StateFlow<FabPosition> = prefs.downloadFabPositionFlow
         .stateIn(viewModelScope, SharingStarted.Eagerly, FabPosition())
@@ -205,6 +220,53 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
+     * Parse the page **before** showing any download UI.
+     *
+     * Tapping the floating action kicks off the engine resolution:
+     *  * [PageParseState.Parsing] → the FAB plays its ring animation,
+     *  * [PageParseState.Ready]   → the sheet opens with thumbnail, title and
+     *    every available file (quality · codec · size),
+     *  * [PageParseState.Error]   → the FAB turns into a retry; tapping it
+     *    re-runs this, while the sheet still opens as a fallback (the direct
+     *    media file captured straight from the page).
+     *
+     * The page URL — not a manifest found inside it — is resolved, because
+     * resolving the page gives the extractor full context (title, thumbnail,
+     * complete format list); a bare manifest URL only returns streams.
+     */
+    fun resolveCurrentPage() {
+        val page = currentUrl.takeIf { it.isNotBlank() && isWebPageUrl(it) } ?: run {
+            pageParseState = PageParseState.Error("Open a web page first.")
+            return
+        }
+        // Already resolved for this page? Do not spin the engine twice.
+        val state = pageParseState
+        if (state is PageParseState.Ready && state.summary.url == page) return
+        resolveJob?.cancel()
+        pageParseState = PageParseState.Parsing
+        resolveJob = viewModelScope.launch {
+            val result = repository.fetchMediaInfo(page)
+            // A page navigation that landed mid-resolve invalidates the
+            // result — onPageStarted already reset the FAB for the new page.
+            if (currentUrl != page) return@launch
+            pageParseState = result.fold(
+                onSuccess = { PageParseState.Ready(it) },
+                onFailure = { PageParseState.Error(userResolveMessage(it)) },
+            )
+        }
+    }
+
+    /** Reset the FAB to its idle look (called once the user dismisses the sheet). */
+    fun clearPageParseState() {
+        pageParseState = PageParseState.Idle
+    }
+
+    private fun userResolveMessage(t: Throwable): String {
+        val first = t.message?.lineSequence()?.firstOrNull().orEmpty().trim()
+        return first.take(160).ifBlank { "Could not read media on this page." }
+    }
+
+    /**
      * WebView returns the JS string as a JSON-encoded string literal, i.e.
      * our JSON double-encoded: `"{"title":"…","sources":[…]}"`. Strip the
      * outer quoting and unescape.
@@ -248,6 +310,12 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun resetFabPosition() = saveFabPosition(FabPosition())
 
     fun onPageStarted(url: String) {
+        // A new page invalidates the previous page's resolution — the FAB
+        // goes back to its plain look and any in-flight resolve is dropped.
+        if (url != currentUrl) {
+            resolveJob?.cancel()
+            pageParseState = PageParseState.Idle
+        }
         currentUrl = url
         addressText = url
         pageTitle = ""

@@ -342,6 +342,76 @@ class DownloaderViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    /**
+     * Starts a download from the browser's *resolved* save sheet — i.e. the
+     * page was parsed first (thumbnail / title / formats known).
+     *
+     * * [format] = null → the primary "Download best" CTA (kind/quality path,
+     *   mirroring the home studio's quick download),
+     * * [format] != null → one specific row the user picked from the
+     *   "Available files" list (the engine gets its exact format id).
+     *
+     * The direct-file path still goes through [startCapture] with
+     * useDirect = true.
+     */
+    fun startBrowserCapture(
+        summary: MediaSummary,
+        request: CaptureRequest,
+        kind: MediaKind,
+        format: MediaFormat? = null,
+        quality: QualityPreset,
+        container: ContainerPref,
+        audioFormat: AudioFormatPref,
+    ) {
+        val cover = summary.thumbnailUrl ?: request.cover
+        val title = summary.title.takeIf { it.isNotBlank() }
+            ?: request.title?.takeIf { it.isNotBlank() }
+            ?: hostOf(request.pageUrl).ifBlank { request.pageUrl }
+        val targetFormat = format
+        if (targetFormat != null) {
+            repo.startDownload(
+                url = summary.url,
+                kind = targetFormat.kind,
+                selector = null,
+                audioFormat = null,
+                containerExt = null,
+                requestLabel = targetFormat.label,
+                title = title,
+                coverUrl = cover,
+                durationSec = summary.durationSec,
+                formatId = targetFormat.id,
+                formatHeight = targetFormat.height,
+                formatFps = targetFormat.fps,
+                formatVcodec = targetFormat.vcodec,
+                formatAcodec = targetFormat.acodec,
+                formatExt = targetFormat.ext,
+            )
+            _transient.value = "Downloading ${targetFormat.label} · “${title.take(40)}”…"
+            return
+        }
+        val hasFfmpeg = ffmpegReady.value
+        val isAudio = kind == MediaKind.Audio
+        repo.startDownload(
+            url = summary.url,
+            kind = kind,
+            selector = if (isAudio) null else FormatRules.videoSelector(quality.height),
+            audioFormat = if (isAudio && hasFfmpeg) audioFormat.ytArg else null,
+            containerExt = if (isAudio) null else container.ext,
+            requestLabel = if (isAudio && !hasFfmpeg) {
+                "Source audio"
+            } else {
+                FormatRules.requestLabel(kind, quality, container, audioFormat)
+            },
+            title = title,
+            coverUrl = cover,
+            durationSec = summary.durationSec,
+        )
+        _transient.value = when {
+            isAudio -> "Extracting ${audioFormat.label} audio · “${title.take(40)}”…"
+            else -> "Downloading “${title.take(44)}”…"
+        }
+    }
+
     fun cancelTask(id: String) {
         repo.cancelTask(id)
         _transient.value = "Download cancelled"
