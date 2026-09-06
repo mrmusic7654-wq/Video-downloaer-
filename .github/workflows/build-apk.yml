@@ -79,7 +79,28 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Build APKs
-        run: ./gradlew :app:assembleDebug :app:assembleRelease $GRADLE_ARGS --stacktrace
+        run: |
+          set -o pipefail
+          ./gradlew :app:assembleDebug :app:assembleRelease $GRADLE_ARGS --stacktrace 2>&1 | tee /tmp/gradle.log
+
+      # TEMPORARY diagnostic: surface Kotlin compiler errors as check
+      # annotations (the log archive is not always reachable), so the exact
+      # failing files/lines are visible without downloading logs.
+      - name: Report compiler errors
+        if: failure()
+        run: |
+          grep '^e: ' /tmp/gradle.log | sort -u | head -60 > /tmp/kotlin-errors.txt || true
+          while IFS= read -r line; do
+            loc="${line#e: file://}"
+            file="${loc%%:*}"
+            tail="${loc#*:}"
+            lineno="${tail%%:*}"
+            msg="${tail#*:}"
+            msg="${msg#*: }"
+            rel="app/${file#*app/}"
+            echo "::error file=${rel},line=${lineno}::${msg}"
+          done < /tmp/kotlin-errors.txt
+          cat /tmp/kotlin-errors.txt
 
       - name: APK size report
         run: |
